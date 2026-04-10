@@ -1,4 +1,4 @@
-"""FastMCP echo server for benchmarking. Streamable HTTP on port 8000."""
+"""FastMCP echo server for benchmarking. Streamable HTTP on port 8001."""
 from fastmcp import FastMCP
 
 mcp = FastMCP("fastmcp-benchmark")

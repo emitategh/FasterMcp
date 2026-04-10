@@ -1,4 +1,4 @@
-"""mcp-grpc echo server for benchmarking. Runs on port 50051."""
+"""mcp-grpc echo server for benchmarking. Runs on port 50052."""
 from mcp_grpc import McpServer
 
 server = McpServer(name="grpc-benchmark", version="1.0.0")

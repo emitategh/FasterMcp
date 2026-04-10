@@ -103,18 +103,19 @@ async def _bench_fastmcp() -> list[float]:
 
 
 async def main() -> None:
-    grpc_proc = subprocess.Popen(
-        [sys.executable, str(BENCHMARK_DIR / "grpc_server.py")],
-        stdout=subprocess.DEVNULL,
-        stderr=subprocess.DEVNULL,
-    )
-    http_proc = subprocess.Popen(
-        [sys.executable, str(BENCHMARK_DIR / "fastmcp_server.py")],
-        stdout=subprocess.DEVNULL,
-        stderr=subprocess.DEVNULL,
-    )
-
+    procs: list[subprocess.Popen] = []
     try:
+        procs.append(subprocess.Popen(
+            [sys.executable, str(BENCHMARK_DIR / "grpc_server.py")],
+            stdout=subprocess.DEVNULL,
+            stderr=subprocess.DEVNULL,
+        ))
+        procs.append(subprocess.Popen(
+            [sys.executable, str(BENCHMARK_DIR / "fastmcp_server.py")],
+            stdout=subprocess.DEVNULL,
+            stderr=subprocess.DEVNULL,
+        ))
+
         print("Waiting for servers to start...")
         _wait_for_port("127.0.0.1", GRPC_PORT)
         _wait_for_port("127.0.0.1", HTTP_PORT)
@@ -132,10 +133,10 @@ async def main() -> None:
         _print_table({"mcp-grpc": grpc_latencies, "FastMCP HTTP": http_latencies})
 
     finally:
-        grpc_proc.terminate()
-        http_proc.terminate()
-        grpc_proc.wait()
-        http_proc.wait()
+        for p in procs:
+            p.terminate()
+        for p in procs:
+            p.wait()
 
 
 if __name__ == "__main__":
