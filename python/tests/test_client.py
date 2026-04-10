@@ -121,6 +121,15 @@ async def test_cancel_no_crash():
 
 
 @pytest.mark.asyncio
+async def test_call_tool_after_concurrent_refactor(echo_server):
+    """Normal tool calls still work after concurrent dispatch refactor."""
+    async with InProcessChannel(echo_server) as client:
+        result = await client.call_tool("echo", {"text": "concurrent test"})
+        assert result.content[0].text == "concurrent test"
+        assert not result.is_error
+
+
+@pytest.mark.asyncio
 async def test_complete():
     server = McpServer(name="test-server", version="0.1")
 

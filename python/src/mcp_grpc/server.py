@@ -164,6 +164,7 @@ class _McpServicer(mcp_pb2_grpc.McpServicer):
                 yield envelope
 
         async def _reader():
+            _tool_tasks: list[asyncio.Task] = []
             async for envelope in request_iterator:
                 rid = envelope.request_id
                 msg_type = envelope.WhichOneof("message")
@@ -203,16 +204,30 @@ class _McpServicer(mcp_pb2_grpc.McpServicer):
 
                 elif msg_type == "call_tool":
                     req = envelope.call_tool
-                    try:
-                        result = await self._server.handle_call_tool(req.name, req.arguments)
-                        await write_queue.put(mcp_pb2.ServerEnvelope(
-                            request_id=rid, call_tool=result,
-                        ))
-                    except McpError as e:
-                        await write_queue.put(mcp_pb2.ServerEnvelope(
-                            request_id=rid,
-                            error=mcp_pb2.ErrorResponse(code=e.code, message=e.message),
-                        ))
+
+                    async def _run_tool(_rid, _req):
+                        try:
+                            tool = self._server._tools.get(_req.name)
+                            ctx = None
+                            if tool and tool.needs_context:
+                                ctx = ToolContext(
+                                    client_capabilities=client_capabilities,
+                                    pending=server_pending,
+                                    write_queue=write_queue,
+                                )
+                            result = await self._server.handle_call_tool(
+                                _req.name, _req.arguments, context=ctx,
+                            )
+                            await write_queue.put(mcp_pb2.ServerEnvelope(
+                                request_id=_rid, call_tool=result,
+                            ))
+                        except McpError as e:
+                            await write_queue.put(mcp_pb2.ServerEnvelope(
+                                request_id=_rid,
+                                error=mcp_pb2.ErrorResponse(code=e.code, message=e.message),
+                            ))
+
+                    _tool_tasks.append(asyncio.create_task(_run_tool(rid, req)))
 
                 elif msg_type == "list_resources":
                     resources = [
@@ -356,6 +371,9 @@ class _McpServicer(mcp_pb2_grpc.McpServicer):
                         ),
                     ))
 
+            # Wait for any in-flight tool tasks before signalling writer to stop
+            if _tool_tasks:
+                await asyncio.gather(*_tool_tasks, return_exceptions=True)
             # Reader done — signal writer to stop
             await write_queue.put(None)
 
@@ -522,11 +540,19 @@ class McpServer:
             payload=json.dumps({"token": token, "progress": progress, "total": total}),
         ))
 
-    async def handle_call_tool(self, name: str, arguments_json: str) -> mcp_pb2.CallToolResponse:
+    async def handle_call_tool(
+        self, name: str, arguments_json: str, context: ToolContext | None = None,
+    ) -> mcp_pb2.CallToolResponse:
         tool = self._tools.get(name)
         if not tool:
             raise McpError(code=404, message=f"Tool '{name}' not found")
         args = json.loads(arguments_json) if arguments_json else {}
+        if tool.needs_context and context is not None:
+            sig = inspect.signature(tool.handler)
+            for param_name, param in sig.parameters.items():
+                if param.annotation is ToolContext:
+                    args[param_name] = context
+                    break
         try:
             result = await tool.handler(**args)
             if isinstance(result, str):

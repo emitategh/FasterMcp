@@ -109,3 +109,32 @@ def test_tool_without_context_has_no_needs_context():
 
     tools = server.list_registered_tools()
     assert tools[0].needs_context is False
+
+
+@pytest.mark.asyncio
+async def test_tool_context_injection():
+    """Tool handler receives a ToolContext when type-hinted."""
+    import asyncio
+    from mcp_grpc.server import ToolContext
+    from mcp_grpc._generated import mcp_pb2
+    from mcp_grpc.session import PendingRequests
+
+    server = McpServer(name="test", version="0.1")
+    received_ctx = []
+
+    @server.tool(description="Check ctx")
+    async def check_ctx(text: str, ctx: ToolContext) -> str:
+        received_ctx.append(ctx)
+        return text
+
+    result = await server.handle_call_tool(
+        "check_ctx", '{"text": "hello"}',
+        context=ToolContext(
+            client_capabilities=mcp_pb2.ClientCapabilities(),
+            pending=PendingRequests(),
+            write_queue=asyncio.Queue(),
+        ),
+    )
+    assert result.content[0].text == "hello"
+    assert len(received_ctx) == 1
+    assert isinstance(received_ctx[0], ToolContext)
