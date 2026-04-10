@@ -2,8 +2,12 @@
 __pycache__/
 *.egg-info/
 dist/
+build/
 .venv/
 python/src/mcp_grpc/_generated/
+
+# Benchmark temp files
+benchmark/.*.stderr
 
 # uv.lock is intentionally committed — do NOT add it here
 
