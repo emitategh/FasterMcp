@@ -190,6 +190,20 @@ class McpClient:
         env = mcp_pb2.ClientEnvelope(ping=mcp_pb2.PingRequest())
         await self._request(env)
 
+    async def cancel(self, target_request_id: int) -> None:
+        await self._send(mcp_pb2.ClientEnvelope(
+            request_id=0,
+            cancel=mcp_pb2.CancelRequest(target_request_id=target_request_id),
+        ))
+
+    async def notify_roots_list_changed(self) -> None:
+        await self._send(mcp_pb2.ClientEnvelope(
+            request_id=0,
+            client_notification=mcp_pb2.ClientNotification(
+                type=mcp_pb2.ClientNotification.ROOTS_LIST_CHANGED,
+            ),
+        ))
+
     async def close(self) -> None:
         if self._reader_task:
             self._reader_task.cancel()

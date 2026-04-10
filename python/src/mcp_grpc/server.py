@@ -246,6 +246,24 @@ class _McpServicer(mcp_pb2_grpc.McpServicer):
                         pong=mcp_pb2.PingResponse(),
                     ))
 
+                elif msg_type == "client_notification":
+                    notif = envelope.client_notification
+                    type_name = mcp_pb2.ClientNotification.Type.Name(notif.type).lower()
+                    for handler in self._server._client_notification_handlers.get(type_name, []):
+                        result = handler(notif.payload)
+                        if asyncio.iscoroutine(result):
+                            await result
+
+                elif msg_type == "cancel":
+                    pass  # cancellation acknowledged but not acted on in sub-project 1
+
+                elif msg_type == "subscribe_res":
+                    uri = envelope.subscribe_res.uri
+                    for handler in self._server._subscribe_handlers:
+                        result = handler(uri)
+                        if asyncio.iscoroutine(result):
+                            await result
+
                 else:
                     await write_queue.put(mcp_pb2.ServerEnvelope(
                         request_id=rid,
@@ -282,6 +300,8 @@ class McpServer:
         self._resource_templates: dict[str, RegisteredResourceTemplate] = {}
         self._completions: dict[str, RegisteredCompletion] = {}
         self._session_queues: list[asyncio.Queue] = []
+        self._client_notification_handlers: dict[str, list[Callable]] = {}
+        self._subscribe_handlers: list[Callable] = []
 
     def tool(self, description: str) -> Callable:
         def decorator(fn: Callable) -> Callable:
@@ -363,6 +383,12 @@ class McpServer:
 
     def list_registered_resource_templates(self) -> list[RegisteredResourceTemplate]:
         return list(self._resource_templates.values())
+
+    def on_roots_list_changed(self, handler: Callable) -> None:
+        self._client_notification_handlers.setdefault("roots_list_changed", []).append(handler)
+
+    def on_resource_subscribe(self, handler: Callable) -> None:
+        self._subscribe_handlers.append(handler)
 
     def _broadcast(self, notification: mcp_pb2.ServerNotification) -> None:
         """Send a notification to all active sessions."""

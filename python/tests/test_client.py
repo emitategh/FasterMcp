@@ -108,6 +108,19 @@ async def test_list_tools_returns_list_result():
 
 
 @pytest.mark.asyncio
+async def test_cancel_no_crash():
+    """Cancellation is acknowledged without error."""
+    server = McpServer(name="test-server", version="0.1")
+
+    @server.tool(description="Echo")
+    async def echo(text: str) -> str:
+        return text
+
+    async with InProcessChannel(server) as client:
+        await client.cancel(target_request_id=999)
+
+
+@pytest.mark.asyncio
 async def test_complete():
     server = McpServer(name="test-server", version="0.1")
 

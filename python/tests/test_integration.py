@@ -79,6 +79,25 @@ async def test_grpc_error_unknown_tool(echo_server):
 
 
 @pytest.mark.asyncio
+async def test_grpc_client_notification():
+    server = McpServer(name="notif-server", version="0.1")
+
+    @server.tool(description="Echo")
+    async def echo(text: str) -> str:
+        return text
+
+    received = []
+    server.on_roots_list_changed(lambda payload: received.append("roots_changed"))
+
+    async with server:
+        async with McpClient(f"localhost:{server.port}") as client:
+            await client.notify_roots_list_changed()
+            await asyncio.sleep(0.2)
+            assert len(received) == 1
+            assert received[0] == "roots_changed"
+
+
+@pytest.mark.asyncio
 async def test_grpc_server_notification():
     server = McpServer(name="notif-server", version="0.1")
 

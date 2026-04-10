@@ -136,3 +136,24 @@ class _InProcessClient:
 
     async def ping(self) -> None:
         await self._roundtrip(mcp_pb2.ClientEnvelope(ping=mcp_pb2.PingRequest()))
+
+    async def cancel(self, target_request_id: int) -> None:
+        """Send a cancel notification (fire-and-forget, no response expected)."""
+        env = mcp_pb2.ClientEnvelope(
+            request_id=0,
+            cancel=mcp_pb2.CancelRequest(target_request_id=target_request_id),
+        )
+
+        async def _single():
+            yield env
+            # Send a ping immediately after so the session produces a response
+            # we can break on, preventing the loop from hanging.
+            ping_env = mcp_pb2.ClientEnvelope(
+                request_id=999999,
+                ping=mcp_pb2.PingRequest(),
+            )
+            yield ping_env
+
+        async for resp in self._servicer.Session(_single(), context=None):
+            if resp.WhichOneof("message") == "pong":
+                break
