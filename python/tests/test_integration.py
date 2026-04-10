@@ -1,3 +1,5 @@
+import asyncio
+
 import pytest
 
 from mcp_grpc import McpClient, McpServer
@@ -74,3 +76,23 @@ async def test_grpc_error_unknown_tool(echo_server):
 
         with pytest.raises(McpError, match="not found"):
             await client.call_tool("nope", {})
+
+
+@pytest.mark.asyncio
+async def test_grpc_server_notification():
+    server = McpServer(name="notif-server", version="0.1")
+
+    @server.tool(description="Echo")
+    async def echo(text: str) -> str:
+        return text
+
+    received = []
+
+    async with server:
+        async with McpClient(f"localhost:{server.port}") as client:
+            client.on_notification("tools_list_changed", lambda payload: received.append("got"))
+            # Give the server's reader task time to process the initialized ack
+            await asyncio.sleep(0.05)
+            server.notify_tools_list_changed()
+            await asyncio.sleep(0.2)
+            assert len(received) == 1

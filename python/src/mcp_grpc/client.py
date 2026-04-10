@@ -11,7 +11,7 @@ from grpc import aio as grpc_aio
 
 from mcp_grpc._generated import mcp_pb2, mcp_pb2_grpc
 from mcp_grpc.errors import McpError
-from mcp_grpc.session import PendingRequests
+from mcp_grpc.session import NotificationRegistry, PendingRequests
 
 
 @dataclass
@@ -34,6 +34,7 @@ class McpClient:
     def __init__(self, target: str) -> None:
         self._target = target
         self._pending = PendingRequests()
+        self._notifications = NotificationRegistry()
         self._channel: grpc_aio.Channel | None = None
         self._stream: Any = None
         self._reader_task: asyncio.Task | None = None
@@ -72,7 +73,11 @@ class McpClient:
                     err = envelope.error
                     self._pending.reject(rid, McpError(err.code, err.message))
                 elif msg_type == "notification":
-                    pass  # notifications not handled in POC
+                    notif = envelope.notification
+                    type_name = mcp_pb2.ServerNotification.Type.Name(notif.type).lower()
+                    asyncio.create_task(
+                        self._notifications.dispatch(type_name, notif.payload)
+                    )
                 else:
                     inner = getattr(envelope, msg_type)
                     self._pending.resolve(rid, inner)
@@ -177,6 +182,9 @@ class McpClient:
             )
         )
         return await self._request(env)
+
+    def on_notification(self, notification_type: str, handler) -> None:
+        self._notifications.register(notification_type, handler)
 
     async def ping(self) -> None:
         env = mcp_pb2.ClientEnvelope(ping=mcp_pb2.PingRequest())

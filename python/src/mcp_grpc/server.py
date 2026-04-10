@@ -111,7 +111,7 @@ class _McpServicer(mcp_pb2_grpc.McpServicer):
                     ))
 
                 elif msg_type == "initialized":
-                    pass
+                    self._server._session_queues.append(write_queue)
 
                 elif msg_type == "list_tools":
                     tools = [
@@ -281,6 +281,7 @@ class McpServer:
         self._prompts: dict[str, RegisteredPrompt] = {}
         self._resource_templates: dict[str, RegisteredResourceTemplate] = {}
         self._completions: dict[str, RegisteredCompletion] = {}
+        self._session_queues: list[asyncio.Queue] = []
 
     def tool(self, description: str) -> Callable:
         def decorator(fn: Callable) -> Callable:
@@ -362,6 +363,48 @@ class McpServer:
 
     def list_registered_resource_templates(self) -> list[RegisteredResourceTemplate]:
         return list(self._resource_templates.values())
+
+    def _broadcast(self, notification: mcp_pb2.ServerNotification) -> None:
+        """Send a notification to all active sessions."""
+        envelope = mcp_pb2.ServerEnvelope(
+            request_id=0,
+            notification=notification,
+        )
+        for queue in self._session_queues:
+            queue.put_nowait(envelope)
+
+    def notify_tools_list_changed(self) -> None:
+        self._broadcast(mcp_pb2.ServerNotification(
+            type=mcp_pb2.ServerNotification.TOOLS_LIST_CHANGED,
+        ))
+
+    def notify_resources_list_changed(self) -> None:
+        self._broadcast(mcp_pb2.ServerNotification(
+            type=mcp_pb2.ServerNotification.RESOURCES_LIST_CHANGED,
+        ))
+
+    def notify_resource_updated(self, uri: str) -> None:
+        self._broadcast(mcp_pb2.ServerNotification(
+            type=mcp_pb2.ServerNotification.RESOURCE_UPDATED,
+            payload=json.dumps({"uri": uri}),
+        ))
+
+    def notify_prompts_list_changed(self) -> None:
+        self._broadcast(mcp_pb2.ServerNotification(
+            type=mcp_pb2.ServerNotification.PROMPTS_LIST_CHANGED,
+        ))
+
+    def log(self, level: str, message: str, logger_name: str | None = None) -> None:
+        self._broadcast(mcp_pb2.ServerNotification(
+            type=mcp_pb2.ServerNotification.LOG,
+            payload=json.dumps({"level": level, "message": message, "logger": logger_name}),
+        ))
+
+    def progress(self, token: str, progress: float, total: float | None = None) -> None:
+        self._broadcast(mcp_pb2.ServerNotification(
+            type=mcp_pb2.ServerNotification.PROGRESS,
+            payload=json.dumps({"token": token, "progress": progress, "total": total}),
+        ))
 
     async def handle_call_tool(self, name: str, arguments_json: str) -> mcp_pb2.CallToolResponse:
         tool = self._tools.get(name)

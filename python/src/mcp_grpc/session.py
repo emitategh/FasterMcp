@@ -2,7 +2,7 @@
 from __future__ import annotations
 
 import asyncio
-from typing import Any
+from typing import Any, Callable
 
 
 class PendingRequests:
@@ -37,3 +37,19 @@ class PendingRequests:
             if not future.done():
                 future.cancel()
         self._pending.clear()
+
+
+class NotificationRegistry:
+    """Registry for notification callbacks keyed by notification type name."""
+
+    def __init__(self) -> None:
+        self._handlers: dict[str, list[Callable]] = {}
+
+    def register(self, notification_type: str, handler: Callable) -> None:
+        self._handlers.setdefault(notification_type, []).append(handler)
+
+    async def dispatch(self, notification_type: str, payload: str) -> None:
+        for handler in self._handlers.get(notification_type, []):
+            result = handler(payload)
+            if asyncio.iscoroutine(result):
+                await result
