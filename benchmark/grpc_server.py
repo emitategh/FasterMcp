@@ -10,4 +10,4 @@ async def echo(text: str) -> str:
 
 
 if __name__ == "__main__":
-    server.run(port=50051)
+    server.run(port=50052)
