@@ -286,7 +286,12 @@ class McpServer:
     async def _start_grpc(self, port: int) -> grpc_aio.Server:
         grpc_server = grpc_aio.server()
         mcp_pb2_grpc.add_McpServicer_to_server(_McpServicer(self), grpc_server)
-        actual_port = grpc_server.add_insecure_port(f"[::]:{port}")
+        # Try IPv6 first, fall back to IPv4 on Windows
+        try:
+            actual_port = grpc_server.add_insecure_port(f"[::]:{port}")
+        except RuntimeError:
+            # Fall back to IPv4 (common on Windows)
+            actual_port = grpc_server.add_insecure_port(f"0.0.0.0:{port}")
         await grpc_server.start()
         self._port = actual_port
         return grpc_server
