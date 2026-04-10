@@ -1,4 +1,4 @@
-# FasterMCP
+# FasterMCP (MCP gRPC native)
 
 **MCP over native gRPC.** 17x lower latency than Streamable HTTP.
 
