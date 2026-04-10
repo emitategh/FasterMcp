@@ -48,6 +48,12 @@ class RegisteredResourceTemplate:
     handler: Callable[..., Awaitable[Any]]
 
 
+@dataclass
+class RegisteredCompletion:
+    ref_name: str
+    handler: Callable[..., Awaitable[list[str]]]
+
+
 def _build_input_schema(fn: Callable) -> str:
     """Build a JSON Schema from function type hints."""
     sig = inspect.signature(fn)
@@ -217,6 +223,23 @@ class _McpServicer(mcp_pb2_grpc.McpServicer):
                             ),
                         ))
 
+                elif msg_type == "complete":
+                    req = envelope.complete
+                    comp = self._server._completions.get(req.ref.name)
+                    if not comp:
+                        await write_queue.put(mcp_pb2.ServerEnvelope(
+                            request_id=rid,
+                            complete=mcp_pb2.CompleteResponse(values=[], has_more=False, total=0),
+                        ))
+                    else:
+                        values = await comp.handler(req.argument.name, req.argument.value)
+                        await write_queue.put(mcp_pb2.ServerEnvelope(
+                            request_id=rid,
+                            complete=mcp_pb2.CompleteResponse(
+                                values=values, has_more=False, total=len(values),
+                            ),
+                        ))
+
                 elif msg_type == "ping":
                     await write_queue.put(mcp_pb2.ServerEnvelope(
                         request_id=rid,
@@ -257,6 +280,7 @@ class McpServer:
         self._resources: dict[str, RegisteredResource] = {}
         self._prompts: dict[str, RegisteredPrompt] = {}
         self._resource_templates: dict[str, RegisteredResourceTemplate] = {}
+        self._completions: dict[str, RegisteredCompletion] = {}
 
     def tool(self, description: str) -> Callable:
         def decorator(fn: Callable) -> Callable:
@@ -302,6 +326,15 @@ class McpServer:
             )
             return fn
 
+        return decorator
+
+    def completion(self, ref_name: str) -> Callable:
+        def decorator(fn: Callable) -> Callable:
+            self._completions[ref_name] = RegisteredCompletion(
+                ref_name=ref_name,
+                handler=fn,
+            )
+            return fn
         return decorator
 
     def resource_template(

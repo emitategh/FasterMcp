@@ -88,3 +88,22 @@ async def test_initialize(echo_server):
         info = client.server_info
         assert info.server_name == "test-server"
         assert info.capabilities.tools is True
+
+
+@pytest.mark.asyncio
+async def test_complete():
+    server = McpServer(name="test-server", version="0.1")
+
+    @server.prompt(description="Greet someone")
+    async def greet(language: str) -> str:
+        return f"Hello in {language}"
+
+    @server.completion("greet")
+    async def complete_language(argument_name: str, value: str) -> list[str]:
+        options = ["english", "spanish", "french", "german"]
+        return [o for o in options if o.startswith(value)]
+
+    async with InProcessChannel(server) as client:
+        result = await client.complete("ref/prompt", "greet", "language", "sp")
+        assert "spanish" in result.values
+        assert "english" not in result.values

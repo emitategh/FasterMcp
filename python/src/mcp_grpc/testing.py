@@ -122,5 +122,17 @@ class _InProcessClient:
         )
         return list(resp.templates)
 
+    async def complete(
+        self, ref_type: str, ref_name: str, argument_name: str, value: str,
+    ) -> mcp_pb2.CompleteResponse:
+        return await self._roundtrip(
+            mcp_pb2.ClientEnvelope(
+                complete=mcp_pb2.CompleteRequest(
+                    ref=mcp_pb2.CompletionRef(type=ref_type, name=ref_name),
+                    argument=mcp_pb2.CompletionArg(name=argument_name, value=value),
+                )
+            )
+        )
+
     async def ping(self) -> None:
         await self._roundtrip(mcp_pb2.ClientEnvelope(ping=mcp_pb2.PingRequest()))

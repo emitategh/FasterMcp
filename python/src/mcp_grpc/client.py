@@ -143,6 +143,17 @@ class McpClient:
         )
         return await self._request(env)
 
+    async def complete(
+        self, ref_type: str, ref_name: str, argument_name: str, value: str,
+    ) -> mcp_pb2.CompleteResponse:
+        env = mcp_pb2.ClientEnvelope(
+            complete=mcp_pb2.CompleteRequest(
+                ref=mcp_pb2.CompletionRef(type=ref_type, name=ref_name),
+                argument=mcp_pb2.CompletionArg(name=argument_name, value=value),
+            )
+        )
+        return await self._request(env)
+
     async def ping(self) -> None:
         env = mcp_pb2.ClientEnvelope(ping=mcp_pb2.PingRequest())
         await self._request(env)
