@@ -3,6 +3,8 @@ import asyncio
 import pytest
 
 from mcp_grpc import McpClient, McpServer
+from mcp_grpc._generated import mcp_pb2
+from mcp_grpc.server import ToolContext
 
 
 @pytest.fixture
@@ -115,3 +117,94 @@ async def test_grpc_server_notification():
             server.notify_tools_list_changed()
             await asyncio.sleep(0.2)
             assert len(received) == 1
+
+
+@pytest.mark.asyncio
+async def test_grpc_sampling_roundtrip():
+    """Full round-trip: tool calls ctx.sample(), client handler responds."""
+    server = McpServer(name="sampling-server", version="0.1")
+
+    @server.tool(description="Summarize with LLM")
+    async def summarize(text: str, ctx: ToolContext) -> str:
+        result = await ctx.sample(
+            messages=[mcp_pb2.SamplingMessage(
+                role="user",
+                content=mcp_pb2.ContentItem(type="text", text=f"Summarize: {text}"),
+            )],
+            max_tokens=100,
+        )
+        return result.content.text
+
+    async with server:
+        client = McpClient(f"localhost:{server.port}")
+
+        async def sampling_handler(request):
+            prompt_text = request.messages[0].content.text
+            return mcp_pb2.SamplingResponse(
+                role="assistant",
+                content=mcp_pb2.ContentItem(type="text", text=f"Summary of: {prompt_text}"),
+                model="test-model",
+                stop_reason="end",
+            )
+
+        client.set_sampling_handler(sampling_handler)
+        await client.connect()
+
+        try:
+            result = await client.call_tool("summarize", {"text": "hello world"})
+            assert "Summary of: Summarize: hello world" in result.content[0].text
+            assert not result.is_error
+        finally:
+            await client.close()
+
+
+@pytest.mark.asyncio
+async def test_grpc_elicitation_roundtrip():
+    """Full round-trip: tool calls ctx.elicit(), client handler responds."""
+    server = McpServer(name="elicit-server", version="0.1")
+
+    @server.tool(description="Confirm deploy")
+    async def deploy(service: str, ctx: ToolContext) -> str:
+        response = await ctx.elicit(
+            message=f"Deploy {service} to production?",
+            schema='{"type": "object", "properties": {"confirm": {"type": "boolean"}}}',
+        )
+        if response.action == "accept":
+            return f"Deployed {service}"
+        return "Cancelled"
+
+    async with server:
+        client = McpClient(f"localhost:{server.port}")
+
+        async def elicitation_handler(request):
+            return mcp_pb2.ElicitationResponse(
+                action="accept",
+                content='{"confirm": true}',
+            )
+
+        client.set_elicitation_handler(elicitation_handler)
+        await client.connect()
+
+        try:
+            result = await client.call_tool("deploy", {"service": "api"})
+            assert result.content[0].text == "Deployed api"
+        finally:
+            await client.close()
+
+
+@pytest.mark.asyncio
+async def test_grpc_sampling_without_capability():
+    """Tool calling ctx.sample() without client capability gets an error response."""
+    server = McpServer(name="no-cap-server", version="0.1")
+
+    @server.tool(description="Try sampling")
+    async def try_sample(text: str, ctx: ToolContext) -> str:
+        await ctx.sample(messages=[], max_tokens=10)
+        return "should not reach"
+
+    async with server:
+        async with McpClient(f"localhost:{server.port}") as client:
+            # No sampling handler registered — capability is False
+            result = await client.call_tool("try_sample", {"text": "hi"})
+            assert result.is_error
+            assert "sampling" in result.content[0].text.lower()
