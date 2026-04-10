@@ -60,144 +60,165 @@ def _build_input_schema(fn: Callable) -> str:
 
 
 class _McpServicer(mcp_pb2_grpc.McpServicer):
-    """Handles bidi Session stream."""
+    """Handles bidi Session stream with concurrent reader/writer."""
 
     def __init__(self, server: McpServer) -> None:
         self._server = server
 
     async def Session(self, request_iterator, context):
-        async for envelope in request_iterator:
-            rid = envelope.request_id
-            msg_type = envelope.WhichOneof("message")
+        write_queue: asyncio.Queue[mcp_pb2.ServerEnvelope] = asyncio.Queue()
 
-            if msg_type == "initialize":
-                yield mcp_pb2.ServerEnvelope(
-                    request_id=rid,
-                    initialize=mcp_pb2.InitializeResponse(
-                        server_name=self._server.name,
-                        server_version=self._server.version,
-                        capabilities=mcp_pb2.ServerCapabilities(
-                            tools=bool(self._server._tools),
-                            tools_list_changed=False,
-                            resources=bool(self._server._resources),
-                            prompts=bool(self._server._prompts),
+        async def _writer():
+            while True:
+                envelope = await write_queue.get()
+                if envelope is None:
+                    break
+                yield envelope
+
+        async def _reader():
+            async for envelope in request_iterator:
+                rid = envelope.request_id
+                msg_type = envelope.WhichOneof("message")
+
+                if msg_type == "initialize":
+                    await write_queue.put(mcp_pb2.ServerEnvelope(
+                        request_id=rid,
+                        initialize=mcp_pb2.InitializeResponse(
+                            server_name=self._server.name,
+                            server_version=self._server.version,
+                            capabilities=mcp_pb2.ServerCapabilities(
+                                tools=bool(self._server._tools),
+                                tools_list_changed=False,
+                                resources=bool(self._server._resources),
+                                prompts=bool(self._server._prompts),
+                            ),
                         ),
-                    ),
-                )
+                    ))
 
-            elif msg_type == "initialized":
-                pass
+                elif msg_type == "initialized":
+                    pass
 
-            elif msg_type == "list_tools":
-                tools = [
-                    mcp_pb2.ToolDefinition(
-                        name=t.name,
-                        description=t.description,
-                        input_schema=t.input_schema,
-                    )
-                    for t in self._server._tools.values()
-                ]
-                yield mcp_pb2.ServerEnvelope(
-                    request_id=rid,
-                    list_tools=mcp_pb2.ListToolsResponse(tools=tools),
-                )
-
-            elif msg_type == "call_tool":
-                req = envelope.call_tool
-                try:
-                    result = await self._server.handle_call_tool(req.name, req.arguments)
-                    yield mcp_pb2.ServerEnvelope(request_id=rid, call_tool=result)
-                except McpError as e:
-                    yield mcp_pb2.ServerEnvelope(
+                elif msg_type == "list_tools":
+                    tools = [
+                        mcp_pb2.ToolDefinition(
+                            name=t.name, description=t.description,
+                            input_schema=t.input_schema,
+                        )
+                        for t in self._server._tools.values()
+                    ]
+                    await write_queue.put(mcp_pb2.ServerEnvelope(
                         request_id=rid,
-                        error=mcp_pb2.ErrorResponse(code=e.code, message=e.message),
-                    )
+                        list_tools=mcp_pb2.ListToolsResponse(tools=tools),
+                    ))
 
-            elif msg_type == "list_resources":
-                resources = [
-                    mcp_pb2.ResourceDefinition(
-                        uri=r.uri,
-                        name=r.name,
-                        description=r.description,
-                        mime_type=r.mime_type,
-                    )
-                    for r in self._server._resources.values()
-                ]
-                yield mcp_pb2.ServerEnvelope(
-                    request_id=rid,
-                    list_resources=mcp_pb2.ListResourcesResponse(resources=resources),
-                )
+                elif msg_type == "call_tool":
+                    req = envelope.call_tool
+                    try:
+                        result = await self._server.handle_call_tool(req.name, req.arguments)
+                        await write_queue.put(mcp_pb2.ServerEnvelope(
+                            request_id=rid, call_tool=result,
+                        ))
+                    except McpError as e:
+                        await write_queue.put(mcp_pb2.ServerEnvelope(
+                            request_id=rid,
+                            error=mcp_pb2.ErrorResponse(code=e.code, message=e.message),
+                        ))
 
-            elif msg_type == "read_resource":
-                uri = envelope.read_resource.uri
-                res = self._server._resources.get(uri)
-                if not res:
-                    yield mcp_pb2.ServerEnvelope(
+                elif msg_type == "list_resources":
+                    resources = [
+                        mcp_pb2.ResourceDefinition(
+                            uri=r.uri, name=r.name,
+                            description=r.description, mime_type=r.mime_type,
+                        )
+                        for r in self._server._resources.values()
+                    ]
+                    await write_queue.put(mcp_pb2.ServerEnvelope(
                         request_id=rid,
-                        error=mcp_pb2.ErrorResponse(
-                            code=404, message=f"Resource '{uri}' not found"
-                        ),
-                    )
-                else:
-                    text = await res.handler()
-                    yield mcp_pb2.ServerEnvelope(
-                        request_id=rid,
-                        read_resource=mcp_pb2.ReadResourceResponse(
-                            content=[mcp_pb2.ContentItem(type="text", text=text)],
-                        ),
-                    )
+                        list_resources=mcp_pb2.ListResourcesResponse(resources=resources),
+                    ))
 
-            elif msg_type == "list_prompts":
-                prompts = [
-                    mcp_pb2.PromptDefinition(
-                        name=p.name,
-                        description=p.description,
-                        arguments=[mcp_pb2.PromptArgument(**a) for a in p.arguments],
-                    )
-                    for p in self._server._prompts.values()
-                ]
-                yield mcp_pb2.ServerEnvelope(
-                    request_id=rid,
-                    list_prompts=mcp_pb2.ListPromptsResponse(prompts=prompts),
-                )
+                elif msg_type == "read_resource":
+                    uri = envelope.read_resource.uri
+                    res = self._server._resources.get(uri)
+                    if not res:
+                        await write_queue.put(mcp_pb2.ServerEnvelope(
+                            request_id=rid,
+                            error=mcp_pb2.ErrorResponse(
+                                code=404, message=f"Resource '{uri}' not found",
+                            ),
+                        ))
+                    else:
+                        text = await res.handler()
+                        await write_queue.put(mcp_pb2.ServerEnvelope(
+                            request_id=rid,
+                            read_resource=mcp_pb2.ReadResourceResponse(
+                                content=[mcp_pb2.ContentItem(type="text", text=text)],
+                            ),
+                        ))
 
-            elif msg_type == "get_prompt":
-                req = envelope.get_prompt
-                prompt = self._server._prompts.get(req.name)
-                if not prompt:
-                    yield mcp_pb2.ServerEnvelope(
+                elif msg_type == "list_prompts":
+                    prompts = [
+                        mcp_pb2.PromptDefinition(
+                            name=p.name, description=p.description,
+                            arguments=[mcp_pb2.PromptArgument(**a) for a in p.arguments],
+                        )
+                        for p in self._server._prompts.values()
+                    ]
+                    await write_queue.put(mcp_pb2.ServerEnvelope(
                         request_id=rid,
-                        error=mcp_pb2.ErrorResponse(
-                            code=404, message=f"Prompt '{req.name}' not found"
-                        ),
-                    )
-                else:
-                    text = await prompt.handler(**dict(req.arguments))
-                    yield mcp_pb2.ServerEnvelope(
-                        request_id=rid,
-                        get_prompt=mcp_pb2.GetPromptResponse(
-                            messages=[
-                                mcp_pb2.PromptMessage(
+                        list_prompts=mcp_pb2.ListPromptsResponse(prompts=prompts),
+                    ))
+
+                elif msg_type == "get_prompt":
+                    req = envelope.get_prompt
+                    prompt = self._server._prompts.get(req.name)
+                    if not prompt:
+                        await write_queue.put(mcp_pb2.ServerEnvelope(
+                            request_id=rid,
+                            error=mcp_pb2.ErrorResponse(
+                                code=404, message=f"Prompt '{req.name}' not found",
+                            ),
+                        ))
+                    else:
+                        text = await prompt.handler(**dict(req.arguments))
+                        await write_queue.put(mcp_pb2.ServerEnvelope(
+                            request_id=rid,
+                            get_prompt=mcp_pb2.GetPromptResponse(
+                                messages=[mcp_pb2.PromptMessage(
                                     role="assistant",
                                     content=mcp_pb2.ContentItem(type="text", text=text),
-                                )
-                            ],
+                                )],
+                            ),
+                        ))
+
+                elif msg_type == "ping":
+                    await write_queue.put(mcp_pb2.ServerEnvelope(
+                        request_id=rid,
+                        pong=mcp_pb2.PingResponse(),
+                    ))
+
+                else:
+                    await write_queue.put(mcp_pb2.ServerEnvelope(
+                        request_id=rid,
+                        error=mcp_pb2.ErrorResponse(
+                            code=400, message=f"Unknown message type: {msg_type}",
                         ),
-                    )
+                    ))
 
-            elif msg_type == "ping":
-                yield mcp_pb2.ServerEnvelope(
-                    request_id=rid,
-                    pong=mcp_pb2.PingResponse(),
-                )
+            # Reader done — signal writer to stop
+            await write_queue.put(None)
 
-            else:
-                yield mcp_pb2.ServerEnvelope(
-                    request_id=rid,
-                    error=mcp_pb2.ErrorResponse(
-                        code=400, message=f"Unknown message type: {msg_type}"
-                    ),
-                )
+        # Start reader as a background task, yield from writer
+        reader_task = asyncio.create_task(_reader())
+        try:
+            async for envelope in _writer():
+                yield envelope
+        finally:
+            reader_task.cancel()
+            try:
+                await reader_task
+            except asyncio.CancelledError:
+                pass
 
 
 class McpServer:
