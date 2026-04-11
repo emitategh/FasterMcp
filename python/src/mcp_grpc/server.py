@@ -5,7 +5,7 @@ import asyncio
 import inspect
 import json
 from dataclasses import dataclass
-from typing import Any, Callable, Awaitable, overload
+from typing import Any, Callable, Awaitable
 
 import grpc
 from grpc import aio as grpc_aio
@@ -405,11 +405,7 @@ class FasterMCP:
         self._client_notification_handlers: dict[str, list[Callable]] = {}
         self._subscribe_handlers: list[Callable] = []
 
-    @overload
-    def tool(self, fn: Callable, *, description: str | None = None) -> Callable: ...
-    @overload
-    def tool(self, fn: None = None, *, description: str | None = None) -> Callable[[Callable], Callable]: ...
-    def tool(self, fn: Callable | None = None, *, description: str | None = None) -> Callable:
+    def tool(self, *, description: str | None = None) -> Callable[[Callable], Callable]:
         def decorator(fn: Callable) -> Callable:
             desc = description or (fn.__doc__ or "").strip()
             sig = inspect.signature(fn)
@@ -426,8 +422,6 @@ class FasterMCP:
             )
             return fn
 
-        if fn is not None:
-            return decorator(fn)
         return decorator
 
     def resource(
@@ -446,11 +440,7 @@ class FasterMCP:
 
         return decorator
 
-    @overload
-    def prompt(self, fn: Callable, *, description: str | None = None) -> Callable: ...
-    @overload
-    def prompt(self, fn: None = None, *, description: str | None = None) -> Callable[[Callable], Callable]: ...
-    def prompt(self, fn: Callable | None = None, *, description: str | None = None) -> Callable:
+    def prompt(self, *, description: str | None = None) -> Callable[[Callable], Callable]:
         def decorator(fn: Callable) -> Callable:
             desc = description or (fn.__doc__ or "").strip()
             sig = inspect.signature(fn)
@@ -470,8 +460,6 @@ class FasterMCP:
             )
             return fn
 
-        if fn is not None:
-            return decorator(fn)
         return decorator
 
     def completion(self, ref_name: str) -> Callable:
