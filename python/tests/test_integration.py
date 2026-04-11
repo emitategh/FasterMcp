@@ -2,14 +2,14 @@ import asyncio
 
 import pytest
 
-from mcp_grpc import McpClient, McpServer
+from mcp_grpc import Client, FasterMCP
 from mcp_grpc._generated import mcp_pb2
-from mcp_grpc.server import ToolContext
+from mcp_grpc.server import Context
 
 
 @pytest.fixture
 async def echo_server():
-    server = McpServer(name="echo-server", version="0.1")
+    server = FasterMCP(name="echo-server", version="0.1")
 
     @server.tool(description="Echo text back")
     async def echo(text: str) -> str:
@@ -29,7 +29,7 @@ async def echo_server():
 
 @pytest.mark.asyncio
 async def test_grpc_list_tools(echo_server):
-    async with McpClient(f"localhost:{echo_server.port}") as client:
+    async with Client(f"localhost:{echo_server.port}") as client:
         result = await client.list_tools()
         names = {t.name for t in result.items}
         assert names == {"echo", "reverse"}
@@ -37,7 +37,7 @@ async def test_grpc_list_tools(echo_server):
 
 @pytest.mark.asyncio
 async def test_grpc_call_tool(echo_server):
-    async with McpClient(f"localhost:{echo_server.port}") as client:
+    async with Client(f"localhost:{echo_server.port}") as client:
         result = await client.call_tool("echo", {"text": "hello grpc"})
         assert result.content[0].text == "hello grpc"
         assert not result.is_error
@@ -45,20 +45,20 @@ async def test_grpc_call_tool(echo_server):
 
 @pytest.mark.asyncio
 async def test_grpc_call_reverse(echo_server):
-    async with McpClient(f"localhost:{echo_server.port}") as client:
+    async with Client(f"localhost:{echo_server.port}") as client:
         result = await client.call_tool("reverse", {"text": "abc"})
         assert result.content[0].text == "cba"
 
 
 @pytest.mark.asyncio
 async def test_grpc_ping(echo_server):
-    async with McpClient(f"localhost:{echo_server.port}") as client:
+    async with Client(f"localhost:{echo_server.port}") as client:
         await client.ping()
 
 
 @pytest.mark.asyncio
 async def test_grpc_list_resources(echo_server):
-    async with McpClient(f"localhost:{echo_server.port}") as client:
+    async with Client(f"localhost:{echo_server.port}") as client:
         result = await client.list_resources()
         assert len(result.items) == 1
         assert result.items[0].uri == "res://greeting"
@@ -66,14 +66,14 @@ async def test_grpc_list_resources(echo_server):
 
 @pytest.mark.asyncio
 async def test_grpc_read_resource(echo_server):
-    async with McpClient(f"localhost:{echo_server.port}") as client:
+    async with Client(f"localhost:{echo_server.port}") as client:
         result = await client.read_resource("res://greeting")
         assert result.content[0].text == "Hello, world!"
 
 
 @pytest.mark.asyncio
 async def test_grpc_error_unknown_tool(echo_server):
-    async with McpClient(f"localhost:{echo_server.port}") as client:
+    async with Client(f"localhost:{echo_server.port}") as client:
         from mcp_grpc.errors import McpError
 
         with pytest.raises(McpError, match="not found"):
@@ -82,7 +82,7 @@ async def test_grpc_error_unknown_tool(echo_server):
 
 @pytest.mark.asyncio
 async def test_grpc_client_notification():
-    server = McpServer(name="notif-server", version="0.1")
+    server = FasterMCP(name="notif-server", version="0.1")
 
     @server.tool(description="Echo")
     async def echo(text: str) -> str:
@@ -92,7 +92,7 @@ async def test_grpc_client_notification():
     server.on_roots_list_changed(lambda payload: received.append("roots_changed"))
 
     async with server:
-        async with McpClient(f"localhost:{server.port}") as client:
+        async with Client(f"localhost:{server.port}") as client:
             await client.notify_roots_list_changed()
             await asyncio.sleep(0.2)
             assert len(received) == 1
@@ -101,7 +101,7 @@ async def test_grpc_client_notification():
 
 @pytest.mark.asyncio
 async def test_grpc_server_notification():
-    server = McpServer(name="notif-server", version="0.1")
+    server = FasterMCP(name="notif-server", version="0.1")
 
     @server.tool(description="Echo")
     async def echo(text: str) -> str:
@@ -110,7 +110,7 @@ async def test_grpc_server_notification():
     received = []
 
     async with server:
-        async with McpClient(f"localhost:{server.port}") as client:
+        async with Client(f"localhost:{server.port}") as client:
             client.on_notification("tools_list_changed", lambda payload: received.append("got"))
             # Give the server's reader task time to process the initialized ack
             await asyncio.sleep(0.05)
@@ -122,10 +122,10 @@ async def test_grpc_server_notification():
 @pytest.mark.asyncio
 async def test_grpc_sampling_roundtrip():
     """Full round-trip: tool calls ctx.sample(), client handler responds."""
-    server = McpServer(name="sampling-server", version="0.1")
+    server = FasterMCP(name="sampling-server", version="0.1")
 
     @server.tool(description="Summarize with LLM")
-    async def summarize(text: str, ctx: ToolContext) -> str:
+    async def summarize(text: str, ctx: Context) -> str:
         result = await ctx.sample(
             messages=[mcp_pb2.SamplingMessage(
                 role="user",
@@ -136,7 +136,7 @@ async def test_grpc_sampling_roundtrip():
         return result.content.text
 
     async with server:
-        client = McpClient(f"localhost:{server.port}")
+        client = Client(f"localhost:{server.port}")
 
         async def sampling_handler(request):
             prompt_text = request.messages[0].content.text
@@ -161,10 +161,10 @@ async def test_grpc_sampling_roundtrip():
 @pytest.mark.asyncio
 async def test_grpc_elicitation_roundtrip():
     """Full round-trip: tool calls ctx.elicit(), client handler responds."""
-    server = McpServer(name="elicit-server", version="0.1")
+    server = FasterMCP(name="elicit-server", version="0.1")
 
     @server.tool(description="Confirm deploy")
-    async def deploy(service: str, ctx: ToolContext) -> str:
+    async def deploy(service: str, ctx: Context) -> str:
         response = await ctx.elicit(
             message=f"Deploy {service} to production?",
             schema='{"type": "object", "properties": {"confirm": {"type": "boolean"}}}',
@@ -174,7 +174,7 @@ async def test_grpc_elicitation_roundtrip():
         return "Cancelled"
 
     async with server:
-        client = McpClient(f"localhost:{server.port}")
+        client = Client(f"localhost:{server.port}")
 
         async def elicitation_handler(request):
             return mcp_pb2.ElicitationResponse(
@@ -195,15 +195,15 @@ async def test_grpc_elicitation_roundtrip():
 @pytest.mark.asyncio
 async def test_grpc_sampling_without_capability():
     """Tool calling ctx.sample() without client capability gets an error response."""
-    server = McpServer(name="no-cap-server", version="0.1")
+    server = FasterMCP(name="no-cap-server", version="0.1")
 
     @server.tool(description="Try sampling")
-    async def try_sample(text: str, ctx: ToolContext) -> str:
+    async def try_sample(text: str, ctx: Context) -> str:
         await ctx.sample(messages=[], max_tokens=10)
         return "should not reach"
 
     async with server:
-        async with McpClient(f"localhost:{server.port}") as client:
+        async with Client(f"localhost:{server.port}") as client:
             # No sampling handler registered — capability is False
             result = await client.call_tool("try_sample", {"text": "hi"})
             assert result.is_error
