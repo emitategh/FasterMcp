@@ -7,14 +7,14 @@ from typing import Any
 from mcp_grpc._generated import mcp_pb2
 from mcp_grpc.client import ListResult, ServerInfo
 from mcp_grpc.errors import McpError
-from mcp_grpc.server import McpServer, _McpServicer
+from mcp_grpc.server import FasterMCP, _McpServicer
 from mcp_grpc.session import PendingRequests
 
 
 class InProcessChannel:
-    """Connect a client directly to a McpServer in-memory (no socket)."""
+    """Connect a client directly to a FasterMCP server in-memory (no socket)."""
 
-    def __init__(self, server: McpServer) -> None:
+    def __init__(self, server: FasterMCP) -> None:
         self._server = server
         self._servicer = _McpServicer(server)
         self._client = _InProcessClient(self._servicer)
