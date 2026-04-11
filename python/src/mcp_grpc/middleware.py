@@ -46,3 +46,69 @@ class Middleware:
         call_next: CallNext,
     ) -> mcp_pb2.CallToolResponse:
         return await call_next(tool_ctx)
+
+
+class TimingMiddleware(Middleware):
+    """Logs elapsed wall-clock time for every tool call.
+
+    Default logger: ``mcp_grpc.timing`` at INFO level.
+    """
+
+    def __init__(
+        self,
+        logger: logging.Logger | None = None,
+        log_level: int = logging.INFO,
+    ) -> None:
+        self._logger = logger or logging.getLogger("mcp_grpc.timing")
+        self._log_level = log_level
+
+    async def on_tool_call(
+        self,
+        tool_ctx: ToolCallContext,
+        call_next: CallNext,
+    ) -> mcp_pb2.CallToolResponse:
+        start = time.perf_counter()
+        result = await call_next(tool_ctx)
+        elapsed_ms = (time.perf_counter() - start) * 1000
+        self._logger.log(
+            self._log_level,
+            "%s completed in %.2fms",
+            tool_ctx.tool_name,
+            elapsed_ms,
+        )
+        return result
+
+
+class LoggingMiddleware(Middleware):
+    """Logs tool name + arguments before, and is_error status after, every call.
+
+    Default logger: ``mcp_grpc.requests`` at INFO level.
+    """
+
+    def __init__(
+        self,
+        logger: logging.Logger | None = None,
+        log_level: int = logging.INFO,
+    ) -> None:
+        self._logger = logger or logging.getLogger("mcp_grpc.requests")
+        self._log_level = log_level
+
+    async def on_tool_call(
+        self,
+        tool_ctx: ToolCallContext,
+        call_next: CallNext,
+    ) -> mcp_pb2.CallToolResponse:
+        self._logger.log(
+            self._log_level,
+            "tool=%s args=%r",
+            tool_ctx.tool_name,
+            tool_ctx.arguments,
+        )
+        result = await call_next(tool_ctx)
+        self._logger.log(
+            self._log_level,
+            "tool=%s is_error=%s",
+            tool_ctx.tool_name,
+            result.is_error,
+        )
+        return result

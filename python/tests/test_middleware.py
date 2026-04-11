@@ -181,3 +181,74 @@ async def test_no_middleware_unchanged():
             result = await client.call_tool("echo", {"text": "plain"})
             assert result.content[0].text == "plain"
             assert not result.is_error
+
+
+# ── Built-in middleware tests ────────────────────────────────────────────────
+
+
+@pytest.mark.asyncio
+async def test_timing_middleware_logs(caplog):
+    """TimingMiddleware logs tool name and elapsed time in milliseconds."""
+    import logging as _logging
+    from mcp_grpc.middleware import TimingMiddleware
+
+    server = FasterMCP(name="timing-server", version="0.1", middleware=[TimingMiddleware()])
+
+    @server.tool(description="Fast tool")
+    async def instant() -> str:
+        return "done"
+
+    async with server:
+        with caplog.at_level(_logging.INFO, logger="mcp_grpc.timing"):
+            async with Client(f"localhost:{server.port}") as client:
+                await client.call_tool("instant", {})
+
+    assert any("instant" in r.message for r in caplog.records)
+    assert any("ms" in r.message for r in caplog.records)
+
+
+@pytest.mark.asyncio
+async def test_timing_middleware_custom_logger(caplog):
+    """TimingMiddleware accepts a custom logger."""
+    import logging as _logging
+    from mcp_grpc.middleware import TimingMiddleware
+
+    custom = _logging.getLogger("my.timer")
+    server = FasterMCP(
+        name="custom-timing-server",
+        version="0.1",
+        middleware=[TimingMiddleware(logger=custom)],
+    )
+
+    @server.tool(description="Tool")
+    async def tool() -> str:
+        return "x"
+
+    async with server:
+        with caplog.at_level(_logging.INFO, logger="my.timer"):
+            async with Client(f"localhost:{server.port}") as client:
+                await client.call_tool("tool", {})
+
+    assert any("tool" in r.message for r in caplog.records if r.name == "my.timer")
+
+
+@pytest.mark.asyncio
+async def test_logging_middleware_logs_tool(caplog):
+    """LoggingMiddleware logs tool name and args before, and is_error status after."""
+    import logging as _logging
+    from mcp_grpc.middleware import LoggingMiddleware
+
+    server = FasterMCP(name="logmw-server", version="0.1", middleware=[LoggingMiddleware()])
+
+    @server.tool(description="A tool")
+    async def mytool(x: str) -> str:
+        return x
+
+    async with server:
+        with caplog.at_level(_logging.INFO, logger="mcp_grpc.requests"):
+            async with Client(f"localhost:{server.port}") as client:
+                await client.call_tool("mytool", {"x": "hello"})
+
+    messages = [r.message for r in caplog.records]
+    assert any("mytool" in m for m in messages)
+    assert len([m for m in messages if "mytool" in m]) >= 2
