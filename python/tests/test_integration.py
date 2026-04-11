@@ -377,3 +377,34 @@ async def test_grpc_resource_subscribe():
 
             assert len(notifications) == 1
             assert notifications[0]["uri"] == "res://counter"
+
+
+@pytest.mark.asyncio
+async def test_grpc_roots_roundtrip():
+    """Tool calls ctx.list_roots(); client roots handler returns roots; server receives them."""
+    server = FasterMCP(name="roots-server", version="0.1")
+
+    @server.tool(description="Get roots")
+    async def get_roots(ctx: Context) -> str:
+        response = await ctx.list_roots()
+        return ",".join(r.uri for r in response.roots)
+
+    async with server:
+        client = Client(f"localhost:{server.port}")
+
+        async def roots_handler() -> mcp_pb2.ListRootsResponse:
+            return mcp_pb2.ListRootsResponse(roots=[
+                mcp_pb2.Root(uri="file:///home/user/project", name="project"),
+                mcp_pb2.Root(uri="file:///home/user/docs", name="docs"),
+            ])
+
+        client.set_roots_handler(roots_handler)
+        await client.connect()
+
+        try:
+            result = await client.call_tool("get_roots", {})
+            assert not result.is_error
+            uris = set(result.content[0].text.split(","))
+            assert uris == {"file:///home/user/project", "file:///home/user/docs"}
+        finally:
+            await client.close()

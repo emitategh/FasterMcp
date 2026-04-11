@@ -157,6 +157,18 @@ class Context:
             ),
         ))
 
+    async def list_roots(self) -> mcp_pb2.ListRootsResponse:
+        """Request the client's registered root URIs."""
+        if not self._capabilities.roots:
+            raise McpError(400, "Client does not support roots")
+        rid = self._pending.next_id()
+        future = self._pending.create(rid)
+        await self._write_queue.put(mcp_pb2.ServerEnvelope(
+            request_id=rid,
+            roots_request=mcp_pb2.ListRootsRequest(),
+        ))
+        return await asyncio.wait_for(future, timeout=30.0)
+
 
 def _build_input_schema(fn: Callable) -> str:
     """Build a JSON Schema from function type hints."""
