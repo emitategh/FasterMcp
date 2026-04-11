@@ -233,3 +233,99 @@ def test_prompt_explicit_description_overrides_docstring():
 
     prompts = mcp.list_registered_prompts()
     assert prompts[0].description == "Override"
+
+
+@pytest.mark.asyncio
+async def test_ctx_info_puts_log_notification():
+    import asyncio, json
+    from mcp_grpc.server import Context
+    from mcp_grpc._generated import mcp_pb2
+    from mcp_grpc.session import PendingRequests
+
+    queue = asyncio.Queue()
+    ctx = Context(
+        client_capabilities=mcp_pb2.ClientCapabilities(),
+        pending=PendingRequests(),
+        write_queue=queue,
+    )
+    await ctx.info("hello")
+    envelope = queue.get_nowait()
+    assert envelope.request_id == 0
+    notif = envelope.notification
+    assert notif.type == mcp_pb2.ServerNotification.LOG
+    payload = json.loads(notif.payload)
+    assert payload["level"] == "info"
+    assert payload["message"] == "hello"
+    assert payload["extra"] is None
+
+
+@pytest.mark.asyncio
+async def test_ctx_debug_puts_correct_level():
+    import asyncio, json
+    from mcp_grpc.server import Context
+    from mcp_grpc._generated import mcp_pb2
+    from mcp_grpc.session import PendingRequests
+
+    queue = asyncio.Queue()
+    ctx = Context(
+        client_capabilities=mcp_pb2.ClientCapabilities(),
+        pending=PendingRequests(),
+        write_queue=queue,
+    )
+    await ctx.debug("dbg")
+    payload = json.loads(queue.get_nowait().notification.payload)
+    assert payload["level"] == "debug"
+
+
+@pytest.mark.asyncio
+async def test_ctx_warning_puts_correct_level():
+    import asyncio, json
+    from mcp_grpc.server import Context
+    from mcp_grpc._generated import mcp_pb2
+    from mcp_grpc.session import PendingRequests
+
+    queue = asyncio.Queue()
+    ctx = Context(
+        client_capabilities=mcp_pb2.ClientCapabilities(),
+        pending=PendingRequests(),
+        write_queue=queue,
+    )
+    await ctx.warning("warn")
+    payload = json.loads(queue.get_nowait().notification.payload)
+    assert payload["level"] == "warning"
+
+
+@pytest.mark.asyncio
+async def test_ctx_error_puts_correct_level():
+    import asyncio, json
+    from mcp_grpc.server import Context
+    from mcp_grpc._generated import mcp_pb2
+    from mcp_grpc.session import PendingRequests
+
+    queue = asyncio.Queue()
+    ctx = Context(
+        client_capabilities=mcp_pb2.ClientCapabilities(),
+        pending=PendingRequests(),
+        write_queue=queue,
+    )
+    await ctx.error("err")
+    payload = json.loads(queue.get_nowait().notification.payload)
+    assert payload["level"] == "error"
+
+
+@pytest.mark.asyncio
+async def test_ctx_info_with_extra():
+    import asyncio, json
+    from mcp_grpc.server import Context
+    from mcp_grpc._generated import mcp_pb2
+    from mcp_grpc.session import PendingRequests
+
+    queue = asyncio.Queue()
+    ctx = Context(
+        client_capabilities=mcp_pb2.ClientCapabilities(),
+        pending=PendingRequests(),
+        write_queue=queue,
+    )
+    await ctx.info("msg", extra={"count": 42})
+    payload = json.loads(queue.get_nowait().notification.payload)
+    assert payload["extra"] == {"count": 42}
