@@ -47,13 +47,16 @@ Intercept tool calls before and after execution:
 
 ```python
 from mcp_grpc import FasterMCP, Middleware, ToolCallContext, TimingMiddleware, LoggingMiddleware
+from mcp_grpc import TimeoutMiddleware, ValidationMiddleware
 from mcp_grpc._generated import mcp_pb2
 import time
 
 # Use built-ins
 server = FasterMCP(name="my-server", version="1.0.0", middleware=[
-    TimingMiddleware(),    # logs "echo completed in 0.52ms"
-    LoggingMiddleware(),   # logs args before, is_error after
+    TimingMiddleware(),              # logs "echo completed in 0.52ms"
+    LoggingMiddleware(),             # logs args before, is_error after
+    TimeoutMiddleware(seconds=5.0),  # raises ToolError on timeout
+    ValidationMiddleware(),          # validates args against tool's JSON schema
 ])
 
 # Or write your own
@@ -75,6 +78,31 @@ class RateLimitMiddleware(Middleware):
 server.add_middleware(RateLimitMiddleware(max_per_second=5.0))
 ```
 
+### Server composition (mounting)
+
+Mount sub-servers into a parent with a prefix:
+
+```python
+from mcp_grpc import FasterMCP
+
+users_server = FasterMCP("Users", "1.0")
+
+@users_server.tool(description="Get a user by ID")
+async def get_user(id: int) -> str:
+    return f"user:{id}"
+
+@users_server.resource(uri="res://profile", description="User profile")
+async def profile() -> str:
+    return "profile data"
+
+main = FasterMCP("Main", "1.0")
+main.mount(users_server, prefix="users")
+# Tools become: "users_get_user"
+# Resources become: "users+res://profile"
+
+main.run(port=50051)
+```
+
 ### Sampling (LLM completion mid-tool)
 
 Tools can request LLM completions from the client using `Context`:
@@ -90,11 +118,11 @@ async def summarize(text: str, ctx: Context) -> str:
     result = await ctx.sample(
         messages=[mcp_pb2.SamplingMessage(
             role="user",
-            content=mcp_pb2.ContentItem(type="text", text=f"Summarize: {text}"),
+            content=[mcp_pb2.ContentItem(type="text", text=f"Summarize: {text}")],
         )],
         max_tokens=200,
     )
-    return result.content.text
+    return result.content[0].text
 ```
 
 The client registers a handler to provide the LLM:
@@ -104,7 +132,7 @@ async def my_sampling_handler(request):
     # Call your LLM here with request.messages
     return mcp_pb2.SamplingResponse(
         role="assistant",
-        content=mcp_pb2.ContentItem(type="text", text="..."),
+        content=[mcp_pb2.ContentItem(type="text", text="...")],
         model="gpt-4", stop_reason="end",
     )
 
@@ -115,19 +143,25 @@ await client.connect()
 
 ### Elicitation (user input mid-tool)
 
-Tools can ask the user for input:
+Tools can ask the user for structured input using typed field builders:
 
 ```python
+from mcp_grpc import FasterMCP, Context, BoolField, build_elicitation_schema
+
+server = FasterMCP(name="my-server", version="1.0.0")
+
 @server.tool(description="Deploy to production")
 async def deploy(service: str, ctx: Context) -> str:
     response = await ctx.elicit(
         message=f"Deploy {service} to prod?",
-        schema='{"type": "object", "properties": {"confirm": {"type": "boolean"}}}',
+        schema=build_elicitation_schema([BoolField("confirm", "Are you sure?")]),
     )
-    if response.action == "accept":
+    if response.action == "accept" and response.content.get("confirm"):
         return f"Deployed {service}"
     return "Cancelled"
 ```
+
+Available field types: `BoolField`, `StringField`, `IntField`, `FloatField`, `EnumField`.
 
 ### Logging and progress from tools
 
@@ -198,6 +232,9 @@ server.on_roots_list_changed(my_handler)
 | Capability negotiation | ✅ |
 | Ping/Pong | ✅ |
 | **Middleware** (`on_tool_call` chain) | ✅ |
+| **Server mounting / composition** | ✅ |
+| **CLI** (`fastermcp run server.py`) | ✅ |
+| **LiveKit integration** | ✅ |
 
 ## Installation
 
@@ -213,7 +250,7 @@ cd python
 uv run pytest tests/ -v
 ```
 
-69 tests covering: tool context injection, sampling/elicitation round-trips, resource templates, completions, pagination, notifications, cancellation, resource subscribe, roots, and the full middleware chain (intercept, argument mutation, chain ordering, built-in TimingMiddleware/LoggingMiddleware).
+167 tests covering: tool context injection, sampling/elicitation round-trips, resource templates, completions, pagination, notifications, cancellation, resource subscribe, roots, middleware chain (intercept, argument mutation, chain ordering, built-ins), server mounting/composition, CLI, content helpers, and session lifecycle.
 
 ## Benchmark: FasterMCP vs FastMCP (Streamable HTTP)
 
@@ -251,13 +288,24 @@ FasterMCP/
 ├── proto/mcp.proto              <- Protocol definition (single source of truth)
 ├── python/
 │   ├── src/mcp_grpc/
-│   │   ├── server.py            <- FasterMCP, Context, _McpServicer, decorators
+│   │   ├── server.py            <- FasterMCP, mount(), decorators
+│   │   ├── _servicer.py         <- _McpServicer (gRPC session handler)
 │   │   ├── client.py            <- Client, ListResult, sampling/elicitation/roots handlers
-│   │   ├── middleware.py        <- Middleware, ToolCallContext, TimingMiddleware, LoggingMiddleware
+│   │   ├── context.py           <- Context (explicit DI per tool call)
+│   │   ├── middleware.py        <- Middleware, ToolCallContext, TimingMiddleware,
+│   │   │                           LoggingMiddleware, TimeoutMiddleware, ValidationMiddleware
 │   │   ├── session.py           <- PendingRequests, NotificationRegistry
 │   │   ├── errors.py            <- McpError, ToolError
-│   │   └── testing.py           <- InProcessChannel for unit tests
-│   └── tests/                   <- 69 tests (unit + integration)
+│   │   ├── content.py           <- Audio, Image content helpers
+│   │   ├── elicitation.py       <- ElicitationField types, build_elicitation_schema
+│   │   ├── cli.py               <- `fastermcp run` entry point
+│   │   ├── testing.py           <- InProcessChannel for unit tests
+│   │   ├── tools/               <- ToolManager, ToolAnnotations, Tool
+│   │   ├── resources/           <- ResourceManager, Resource
+│   │   ├── prompts/             <- PromptManager, Prompt
+│   │   └── integrations/
+│   │       └── livekit.py       <- MCPServerGRPC adapter for livekit-agents
+│   └── tests/                   <- 167 tests (unit + integration)
 ├── benchmark/
 │   ├── run_benchmark.py         <- Latency harness
 │   ├── grpc_server.py           <- FasterMCP echo server (gRPC)
@@ -274,11 +322,35 @@ FasterMCP/
 - **Context as explicit DI.** Tool handlers that declare `ctx: Context` get sampling/elicitation/logging capabilities injected per-call. Unlike FastMCP, Context is not pulled from a ContextVar — it's constructed explicitly and DI-injected, so middleware receives `ctx=None` for tools that didn't opt in.
 - **Middleware chain.** `functools.partial` reversed-registration chain wired into `_dispatch_tool`. First-registered middleware is outermost.
 - **Protobuf envelopes with `oneof`.** Each envelope carries a `request_id` and one message type. The SDK handles correlation transparently via `PendingRequests` (same pattern as the official MCP SDK's `BaseSession`).
+- **Manager packages.** `tools/`, `resources/`, `prompts/` are sub-packages with a `Manager` class and a domain object. `_McpServicer` delegates to them; `FasterMCP` registers decorators through them.
+- **Server mounting.** `mount(sub, prefix)` merges all tools, resources, and prompts from a sub-server into the parent with a namespace prefix applied at registration time.
 
 See [design spec](docs/superpowers/specs/2026-04-10-mcp-grpc-design.md) for the full protocol definition.
 
+## CLI
+
+```bash
+fastermcp run server.py           # auto-discovers `mcp`, `server`, or `app` object
+fastermcp run server.py:my_app    # explicit object name
+fastermcp run server.py --port 8080
+fastermcp version
+```
+
+## LiveKit integration
+
+Use FasterMCP as an MCP server within a [livekit-agents](https://github.com/livekit/agents) pipeline:
+
+```python
+from mcp_grpc.integrations.livekit import MCPServerGRPC
+from livekit.agents import AgentSession
+
+session = AgentSession(
+    mcp_servers=[MCPServerGRPC(address="mcp-server:50051")],
+)
+```
+
 ## Status
 
-**Python SDK: feature-complete with full MCP spec parity + middleware.**
+**Python SDK: feature-complete — full MCP spec parity, middleware, server mounting, CLI, LiveKit integration.**
 
-Next: server mounting/composition (`main.mount(sub, prefix="x")`), CLI (`fastermcp run server.py`).
+Next: PyPI package / versioning, multi-language client stubs (TypeScript, Go).
