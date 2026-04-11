@@ -246,3 +246,27 @@ async def test_grpc_ctx_logging_and_progress():
             assert len(progress_received) == 1
             assert progress_received[0]["progress"] == 50
             assert progress_received[0]["total"] == 100
+
+
+@pytest.mark.asyncio
+async def test_grpc_list_resource_templates():
+    """Register a resource template, list it, verify all fields are returned."""
+    server = FasterMCP(name="template-server", version="0.1")
+
+    @server.resource_template(
+        uri_template="res://items/{id}",
+        description="Fetch an item by ID",
+        mime_type="application/json",
+    )
+    async def get_item(id: str) -> str:
+        return f'{{"id": "{id}"}}'
+
+    async with server:
+        async with Client(f"localhost:{server.port}") as client:
+            result = await client.list_resource_templates()
+            assert len(result.items) == 1
+            tmpl = result.items[0]
+            assert tmpl.uri_template == "res://items/{id}"
+            assert tmpl.description == "Fetch an item by ID"
+            assert tmpl.mime_type == "application/json"
+            assert result.next_cursor is None
