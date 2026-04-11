@@ -4,7 +4,8 @@ __pycache__/
 dist/
 build/
 .venv/
-python/src/mcp_grpc/_generated/
+python/src/mcp_grpc/_generated/*
+!python/src/mcp_grpc/_generated/__init__.py
 
 # Benchmark temp files
 benchmark/.*.stderr
