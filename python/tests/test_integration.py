@@ -270,3 +270,26 @@ async def test_grpc_list_resource_templates():
             assert tmpl.description == "Fetch an item by ID"
             assert tmpl.mime_type == "application/json"
             assert result.next_cursor is None
+
+
+@pytest.mark.asyncio
+async def test_grpc_completions_roundtrip():
+    """Register a completion handler; client calls complete(); verify suggestions returned."""
+    server = FasterMCP(name="completion-server", version="0.1")
+
+    @server.completion("my_tool")
+    async def suggest_city(argument_name: str, value: str) -> list[str]:
+        cities = ["london", "paris", "berlin", "madrid", "rome"]
+        return [c for c in cities if c.startswith(value)]
+
+    async with server:
+        async with Client(f"localhost:{server.port}") as client:
+            result = await client.complete(
+                ref_type="tool",
+                ref_name="my_tool",
+                argument_name="city",
+                value="l",
+            )
+            assert result.values == ["london"]
+            assert result.total == 1
+            assert not result.has_more
