@@ -83,7 +83,7 @@ async def test_call_unknown_tool():
 
 
 def test_tool_context_excluded_from_schema():
-    """ToolContext parameter should not appear in input_schema."""
+    """Context parameter should not appear in input_schema."""
     from mcp_grpc.server import Context
 
     server = FasterMCP(name="test", version="0.1")
@@ -113,7 +113,7 @@ def test_tool_without_context_has_no_needs_context():
 
 @pytest.mark.asyncio
 async def test_tool_context_injection():
-    """Tool handler receives a ToolContext when type-hinted."""
+    """Tool handler receives a Context when type-hinted."""
     import asyncio
     from mcp_grpc.server import Context
     from mcp_grpc._generated import mcp_pb2
