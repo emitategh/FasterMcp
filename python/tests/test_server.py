@@ -84,7 +84,7 @@ async def test_call_unknown_tool():
 
 def test_tool_context_excluded_from_schema():
     """Context parameter should not appear in input_schema."""
-    from mcp_grpc.server import Context
+    from mcp_grpc.context import Context
 
     server = FasterMCP(name="test", version="0.1")
 
@@ -117,7 +117,7 @@ async def test_tool_context_injection():
     import asyncio
 
     from mcp_grpc._generated import mcp_pb2
-    from mcp_grpc.server import Context
+    from mcp_grpc.context import Context
     from mcp_grpc.session import PendingRequests
 
     server = FasterMCP(name="test", version="0.1")
@@ -243,7 +243,7 @@ async def test_ctx_info_puts_log_notification():
     import json
 
     from mcp_grpc._generated import mcp_pb2
-    from mcp_grpc.server import Context
+    from mcp_grpc.context import Context
     from mcp_grpc.session import PendingRequests
 
     queue = asyncio.Queue()
@@ -269,7 +269,7 @@ async def test_ctx_debug_puts_correct_level():
     import json
 
     from mcp_grpc._generated import mcp_pb2
-    from mcp_grpc.server import Context
+    from mcp_grpc.context import Context
     from mcp_grpc.session import PendingRequests
 
     queue = asyncio.Queue()
@@ -289,7 +289,7 @@ async def test_ctx_warning_puts_correct_level():
     import json
 
     from mcp_grpc._generated import mcp_pb2
-    from mcp_grpc.server import Context
+    from mcp_grpc.context import Context
     from mcp_grpc.session import PendingRequests
 
     queue = asyncio.Queue()
@@ -309,7 +309,7 @@ async def test_ctx_error_puts_correct_level():
     import json
 
     from mcp_grpc._generated import mcp_pb2
-    from mcp_grpc.server import Context
+    from mcp_grpc.context import Context
     from mcp_grpc.session import PendingRequests
 
     queue = asyncio.Queue()
@@ -329,7 +329,7 @@ async def test_ctx_info_with_extra():
     import json
 
     from mcp_grpc._generated import mcp_pb2
-    from mcp_grpc.server import Context
+    from mcp_grpc.context import Context
     from mcp_grpc.session import PendingRequests
 
     queue = asyncio.Queue()
@@ -349,7 +349,7 @@ async def test_ctx_debug_with_extra():
     import json
 
     from mcp_grpc._generated import mcp_pb2
-    from mcp_grpc.server import Context
+    from mcp_grpc.context import Context
     from mcp_grpc.session import PendingRequests
 
     queue = asyncio.Queue()
@@ -370,7 +370,7 @@ async def test_ctx_report_progress_with_total():
     import json
 
     from mcp_grpc._generated import mcp_pb2
-    from mcp_grpc.server import Context
+    from mcp_grpc.context import Context
     from mcp_grpc.session import PendingRequests
 
     queue = asyncio.Queue()
@@ -413,7 +413,7 @@ async def test_future_annotations_context_injection():
     from _future_annotations_helper import register_tool_with_future_annotations
 
     from mcp_grpc._generated import mcp_pb2
-    from mcp_grpc.server import Context
+    from mcp_grpc.context import Context
     from mcp_grpc.session import PendingRequests
 
     server = FasterMCP(name="test", version="0.1")
@@ -438,7 +438,7 @@ async def test_ctx_report_progress_without_total():
     import json
 
     from mcp_grpc._generated import mcp_pb2
-    from mcp_grpc.server import Context
+    from mcp_grpc.context import Context
     from mcp_grpc.session import PendingRequests
 
     queue = asyncio.Queue()

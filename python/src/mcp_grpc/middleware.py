@@ -16,7 +16,7 @@ if TYPE_CHECKING:
     # server.py imports Middleware; middleware.py needs Context for ToolCallContext.
     # With `from __future__ import annotations`, all annotations are strings at
     # runtime so Python never resolves this import during normal execution.
-    from mcp_grpc.server import Context
+    from mcp_grpc.context import Context
 
 # Type alias for the next handler in the chain.
 CallNext = Callable[["ToolCallContext"], Awaitable[mcp_pb2.CallToolResponse]]

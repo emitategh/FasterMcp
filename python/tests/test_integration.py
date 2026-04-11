@@ -5,7 +5,7 @@ import pytest
 
 from mcp_grpc import Client, FasterMCP
 from mcp_grpc._generated import mcp_pb2
-from mcp_grpc.server import Context
+from mcp_grpc.context import Context
 
 
 @pytest.fixture
