@@ -405,8 +405,9 @@ class FasterMCP:
         self._client_notification_handlers: dict[str, list[Callable]] = {}
         self._subscribe_handlers: list[Callable] = []
 
-    def tool(self, description: str) -> Callable:
+    def tool(self, fn: Callable | None = None, *, description: str | None = None) -> Callable:
         def decorator(fn: Callable) -> Callable:
+            desc = description or (fn.__doc__ or "").strip()
             sig = inspect.signature(fn)
             needs_ctx = any(
                 p.annotation is Context
@@ -414,21 +415,26 @@ class FasterMCP:
             )
             self._tools[fn.__name__] = RegisteredTool(
                 name=fn.__name__,
-                description=description,
+                description=desc,
                 input_schema=_build_input_schema(fn),
                 handler=fn,
                 needs_context=needs_ctx,
             )
             return fn
 
+        if fn is not None:
+            return decorator(fn)
         return decorator
 
-    def resource(self, uri: str, description: str, mime_type: str = "text/plain") -> Callable:
+    def resource(
+        self, uri: str, *, description: str | None = None, mime_type: str = "text/plain",
+    ) -> Callable:
         def decorator(fn: Callable) -> Callable:
+            desc = description or (fn.__doc__ or "").strip()
             self._resources[uri] = RegisteredResource(
                 uri=uri,
                 name=fn.__name__,
-                description=description,
+                description=desc,
                 mime_type=mime_type,
                 handler=fn,
             )
@@ -436,8 +442,9 @@ class FasterMCP:
 
         return decorator
 
-    def prompt(self, description: str) -> Callable:
+    def prompt(self, fn: Callable | None = None, *, description: str | None = None) -> Callable:
         def decorator(fn: Callable) -> Callable:
+            desc = description or (fn.__doc__ or "").strip()
             sig = inspect.signature(fn)
             arguments = [
                 {
@@ -449,12 +456,14 @@ class FasterMCP:
             ]
             self._prompts[fn.__name__] = RegisteredPrompt(
                 name=fn.__name__,
-                description=description,
+                description=desc,
                 arguments=arguments,
                 handler=fn,
             )
             return fn
 
+        if fn is not None:
+            return decorator(fn)
         return decorator
 
     def completion(self, ref_name: str) -> Callable:
@@ -467,13 +476,14 @@ class FasterMCP:
         return decorator
 
     def resource_template(
-        self, uri_template: str, description: str, mime_type: str = "text/plain",
+        self, uri_template: str, *, description: str | None = None, mime_type: str = "text/plain",
     ) -> Callable:
         def decorator(fn: Callable) -> Callable:
+            desc = description or (fn.__doc__ or "").strip()
             self._resource_templates[uri_template] = RegisteredResourceTemplate(
                 uri_template=uri_template,
                 name=fn.__name__,
-                description=description,
+                description=desc,
                 mime_type=mime_type,
                 handler=fn,
             )

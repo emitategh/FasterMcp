@@ -138,3 +138,86 @@ async def test_tool_context_injection():
     assert result.content[0].text == "hello"
     assert len(received_ctx) == 1
     assert isinstance(received_ctx[0], Context)
+
+
+def test_tool_bare_decorator():
+    """@mcp.tool without parens infers description from docstring."""
+    mcp = FasterMCP(name="test", version="0.1")
+
+    @mcp.tool
+    async def echo(text: str) -> str:
+        """Echo text back"""
+        return text
+
+    tools = mcp.list_registered_tools()
+    assert len(tools) == 1
+    assert tools[0].name == "echo"
+    assert tools[0].description == "Echo text back"
+
+
+def test_tool_empty_parens():
+    """@mcp.tool() with empty parens infers description from docstring."""
+    mcp = FasterMCP(name="test", version="0.1")
+
+    @mcp.tool()
+    async def echo(text: str) -> str:
+        """Echo text back"""
+        return text
+
+    tools = mcp.list_registered_tools()
+    assert len(tools) == 1
+    assert tools[0].description == "Echo text back"
+
+
+def test_tool_no_docstring_no_description():
+    """@mcp.tool with no docstring and no description uses empty string."""
+    mcp = FasterMCP(name="test", version="0.1")
+
+    @mcp.tool
+    async def echo(text: str) -> str:
+        return text
+
+    tools = mcp.list_registered_tools()
+    assert tools[0].description == ""
+
+
+def test_prompt_bare_decorator():
+    """@mcp.prompt without parens infers description from docstring."""
+    mcp = FasterMCP(name="test", version="0.1")
+
+    @mcp.prompt
+    async def greet(name: str) -> str:
+        """Greet the user"""
+        return f"Hello, {name}!"
+
+    prompts = mcp.list_registered_prompts()
+    assert len(prompts) == 1
+    assert prompts[0].description == "Greet the user"
+
+
+def test_resource_optional_description():
+    """@mcp.resource(uri) without description infers from docstring."""
+    mcp = FasterMCP(name="test", version="0.1")
+
+    @mcp.resource("res://config")
+    async def config() -> str:
+        """App config"""
+        return '{"env": "prod"}'
+
+    resources = mcp.list_registered_resources()
+    assert len(resources) == 1
+    assert resources[0].description == "App config"
+
+
+def test_resource_template_optional_description():
+    """@mcp.resource_template(uri) without description infers from docstring."""
+    mcp = FasterMCP(name="test", version="0.1")
+
+    @mcp.resource_template("file:///{path}")
+    async def read_file(path: str) -> str:
+        """Read a file"""
+        return f"contents of {path}"
+
+    templates = mcp.list_registered_resource_templates()
+    assert len(templates) == 1
+    assert templates[0].description == "Read a file"
