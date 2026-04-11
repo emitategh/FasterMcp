@@ -1,4 +1,4 @@
-"""McpClient: connect to an MCP gRPC server, discover and call tools."""
+"""Client: connect to an MCP gRPC server, discover and call tools."""
 from __future__ import annotations
 
 import asyncio
@@ -28,7 +28,7 @@ class ServerInfo:
     capabilities: mcp_pb2.ServerCapabilities
 
 
-class McpClient:
+class Client:
     """Connect to an MCP gRPC server and interact with it."""
 
     def __init__(self, target: str) -> None:
