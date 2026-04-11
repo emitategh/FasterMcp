@@ -17,6 +17,7 @@ from mcp_grpc._utils import _paginate, _prefix_resource_uri
 from mcp_grpc.context import Context
 from mcp_grpc.errors import McpError
 from mcp_grpc.middleware import Middleware
+from mcp_grpc.resources import RegisteredResource, RegisteredResourceTemplate, ResourceManager
 from mcp_grpc.session import PendingRequests
 from mcp_grpc.tools import RegisteredTool, ToolManager
 
@@ -24,28 +25,10 @@ logger = logging.getLogger("mcp_grpc.server")
 
 
 @dataclass
-class RegisteredResource:
-    uri: str
-    name: str
-    description: str
-    mime_type: str
-    handler: Callable[..., Awaitable[Any]]
-
-
-@dataclass
 class RegisteredPrompt:
     name: str
     description: str
     arguments: list[dict[str, Any]]
-    handler: Callable[..., Awaitable[Any]]
-
-
-@dataclass
-class RegisteredResourceTemplate:
-    uri_template: str
-    name: str
-    description: str
-    mime_type: str
     handler: Callable[..., Awaitable[Any]]
 
 
@@ -453,9 +436,8 @@ class FasterMCP:
         self.version = version
         self.page_size = page_size
         self._tool_manager = ToolManager(middleware=middleware)
-        self._resources: dict[str, RegisteredResource] = {}
+        self._resource_manager = ResourceManager()
         self._prompts: dict[str, RegisteredPrompt] = {}
-        self._resource_templates: dict[str, RegisteredResourceTemplate] = {}
         self._completions: dict[str, RegisteredCompletion] = {}
         self._session_queues: list[asyncio.Queue] = []
         self._client_notification_handlers: dict[str, list[Callable]] = {}
@@ -464,6 +446,14 @@ class FasterMCP:
     @property
     def _tools(self) -> dict[str, RegisteredTool]:
         return self._tool_manager._tools
+
+    @property
+    def _resources(self) -> dict[str, RegisteredResource]:
+        return self._resource_manager._resources
+
+    @property
+    def _resource_templates(self) -> dict[str, RegisteredResourceTemplate]:
+        return self._resource_manager._resource_templates
 
     def tool(
         self,
@@ -493,18 +483,7 @@ class FasterMCP:
         description: str | None = None,
         mime_type: str = "text/plain",
     ) -> Callable:
-        def decorator(fn: Callable) -> Callable:
-            desc = description or (fn.__doc__ or "").strip()
-            self._resources[uri] = RegisteredResource(
-                uri=uri,
-                name=fn.__name__,
-                description=desc,
-                mime_type=mime_type,
-                handler=fn,
-            )
-            return fn
-
-        return decorator
+        return self._resource_manager.resource(uri, description=description, mime_type=mime_type)
 
     def prompt(self, *, description: str | None = None) -> Callable[[Callable], Callable]:
         def decorator(fn: Callable) -> Callable:
@@ -545,30 +524,21 @@ class FasterMCP:
         description: str | None = None,
         mime_type: str = "text/plain",
     ) -> Callable:
-        def decorator(fn: Callable) -> Callable:
-            desc = description or (fn.__doc__ or "").strip()
-            self._resource_templates[uri_template] = RegisteredResourceTemplate(
-                uri_template=uri_template,
-                name=fn.__name__,
-                description=desc,
-                mime_type=mime_type,
-                handler=fn,
-            )
-            return fn
-
-        return decorator
+        return self._resource_manager.resource_template(
+            uri_template, description=description, mime_type=mime_type
+        )
 
     def list_registered_tools(self) -> list[RegisteredTool]:
         return self._tool_manager.list_registered_tools()
 
     def list_registered_resources(self) -> list[RegisteredResource]:
-        return list(self._resources.values())
+        return self._resource_manager.list_registered_resources()
 
     def list_registered_prompts(self) -> list[RegisteredPrompt]:
         return list(self._prompts.values())
 
     def list_registered_resource_templates(self) -> list[RegisteredResourceTemplate]:
-        return list(self._resource_templates.values())
+        return self._resource_manager.list_registered_resource_templates()
 
     def add_middleware(self, middleware: Middleware) -> None:
         """Append a middleware to the chain (outermost if added last)."""
