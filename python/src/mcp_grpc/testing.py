@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import asyncio
 import json
 from typing import Any
 
@@ -10,6 +11,26 @@ from mcp_grpc.client import ListResult, ServerInfo
 from mcp_grpc.errors import McpError
 from mcp_grpc.server import FasterMCP, _McpServicer
 from mcp_grpc.session import PendingRequests
+
+
+class _AsyncMessageIter:
+    """Async iterator over a fixed list of ClientEnvelope messages.
+
+    Raises StopAsyncIteration after the last message, which causes the
+    Session generator's read_task to set eof=True and drain the write queue.
+    """
+
+    def __init__(self, messages: list[mcp_pb2.ClientEnvelope]) -> None:
+        self._iter = iter(messages)
+
+    def __aiter__(self) -> _AsyncMessageIter:
+        return self
+
+    async def __anext__(self) -> mcp_pb2.ClientEnvelope:
+        try:
+            return next(self._iter)
+        except StopIteration:
+            raise StopAsyncIteration
 
 
 class InProcessChannel:
@@ -36,23 +57,24 @@ class _InProcessClient:
         self._pending = PendingRequests()
         self.server_info: ServerInfo | None = None
 
-    async def _roundtrip(self, envelope: mcp_pb2.ClientEnvelope) -> Any:
+    async def _roundtrip(self, *envelopes: mcp_pb2.ClientEnvelope) -> Any:
+        """Run a short session with the given envelopes; return the first response."""
         rid = self._pending.next_id()
-        envelope.request_id = rid
+        envelopes[0].request_id = rid
 
-        async def _single_request():
-            yield envelope
+        request_iter = _AsyncMessageIter(list(envelopes))
+        responses: list[mcp_pb2.ServerEnvelope] = []
+        async for resp in self._servicer.Session(request_iter, None):
+            responses.append(resp)
 
-        response = None
-        async for resp in self._servicer.Session(_single_request(), context=None):
+        for resp in responses:
             if resp.request_id == rid:
                 msg_type = resp.WhichOneof("message")
                 if msg_type == "error":
                     err = resp.error
                     raise McpError(err.code, err.message)
-                response = getattr(resp, msg_type)
-                break
-        return response
+                return getattr(resp, msg_type)
+        raise RuntimeError(f"No response with request_id={rid} in session responses")
 
     async def _initialize(self) -> None:
         env = mcp_pb2.ClientEnvelope(
@@ -137,22 +159,15 @@ class _InProcessClient:
         await self._roundtrip(mcp_pb2.ClientEnvelope(ping=mcp_pb2.PingRequest()))
 
     async def cancel(self, target_request_id: int) -> None:
-        """Send a cancel notification (fire-and-forget, no response expected)."""
-        env = mcp_pb2.ClientEnvelope(
+        """Send a cancel notification then ping to confirm the session is live."""
+        cancel_env = mcp_pb2.ClientEnvelope(
             request_id=0,
             cancel=mcp_pb2.CancelRequest(target_request_id=target_request_id),
         )
-
-        async def _single():
-            yield env
-            # Send a ping immediately after so the session produces a response
-            # we can break on, preventing the loop from hanging.
-            ping_env = mcp_pb2.ClientEnvelope(
-                request_id=999999,
-                ping=mcp_pb2.PingRequest(),
-            )
-            yield ping_env
-
-        async for resp in self._servicer.Session(_single(), context=None):
-            if resp.WhichOneof("message") == "pong":
-                break
+        ping_env = mcp_pb2.ClientEnvelope(
+            request_id=999999,
+            ping=mcp_pb2.PingRequest(),
+        )
+        request_iter = _AsyncMessageIter([cancel_env, ping_env])
+        async for _ in self._servicer.Session(request_iter, None):
+            pass

@@ -29,6 +29,16 @@ async def test_list_tools(echo_server):
 
 
 @pytest.mark.asyncio
+async def test_list_tools_twice(echo_server):
+    """list_tools can be called twice without error."""
+    async with InProcessChannel(echo_server) as client:
+        result1 = await client.list_tools()
+        result2 = await client.list_tools()
+        assert len(result1.items) == len(result2.items) == 1
+        assert result1.items[0].name == result2.items[0].name == "echo"
+
+
+@pytest.mark.asyncio
 async def test_call_tool(echo_server):
     async with InProcessChannel(echo_server) as client:
         result = await client.call_tool("echo", {"text": "hello"})

@@ -5,6 +5,7 @@ from __future__ import annotations
 import asyncio
 import json
 import logging
+import time
 from dataclasses import dataclass
 from typing import Any
 
@@ -59,12 +60,16 @@ class Client:
         self._roots_handler = handler
 
     async def connect(self) -> None:
+        logger.debug("connecting to %s", self._target)
         self._channel = grpc_aio.insecure_channel(self._target)
         stub = mcp_pb2_grpc.McpStub(self._channel)
         self._write_queue: asyncio.Queue[mcp_pb2.ClientEnvelope] = asyncio.Queue()
         self._stream = stub.Session(self._outbound_iter())
         self._reader_task = asyncio.create_task(self._reader_loop())
         await self._initialize()
+        logger.debug("connected to %s  server=%s %s", self._target,
+                     self.server_info.server_name if self.server_info else "?",
+                     self.server_info.server_version if self.server_info else "?")
 
     async def _outbound_iter(self):
         while True:
@@ -76,21 +81,40 @@ class Client:
     async def _send(self, envelope: mcp_pb2.ClientEnvelope) -> None:
         await self._write_queue.put(envelope)
 
+    _REQUEST_TIMEOUT = 30.0
+
     async def _request(self, envelope: mcp_pb2.ClientEnvelope) -> Any:
         rid = self._pending.next_id()
         envelope.request_id = rid
+        msg_type = envelope.WhichOneof("message")
+        logger.debug("→ %s rid=%d", msg_type, rid)
         future = self._pending.create(rid)
+        t0 = time.monotonic()
         await self._send(envelope)
-        return await asyncio.wait_for(future, timeout=30.0)
+        try:
+            result = await asyncio.wait_for(future, timeout=self._REQUEST_TIMEOUT)
+        except asyncio.TimeoutError:
+            elapsed_ms = (time.monotonic() - t0) * 1000
+            logger.warning(
+                "request timed out: %s rid=%d after %.0fms (timeout=%.0fs)",
+                msg_type, rid, elapsed_ms, self._REQUEST_TIMEOUT,
+            )
+            raise McpError(408, f"Request timed out: {msg_type} rid={rid}")
+        elapsed_ms = (time.monotonic() - t0) * 1000
+        logger.debug("← %s rid=%d %.1fms", msg_type, rid, elapsed_ms)
+        return result
 
     async def _reader_loop(self) -> None:
+        logger.debug("reader loop started for %s", self._target)
         try:
             async for envelope in self._stream:
                 rid = envelope.request_id
                 msg_type = envelope.WhichOneof("message")
+                logger.debug("← server %s rid=%d", msg_type, rid)
 
                 if msg_type == "error":
                     err = envelope.error
+                    logger.debug("server error rid=%d code=%d: %s", rid, err.code, err.message)
                     self._pending.reject(rid, McpError(err.code, err.message))
                 elif msg_type == "notification":
                     notif = envelope.notification
@@ -107,7 +131,9 @@ class Client:
                 else:
                     inner = getattr(envelope, msg_type)
                     self._pending.resolve(rid, inner)
-        except grpc.RpcError:
+            logger.debug("reader loop ended normally for %s", self._target)
+        except grpc.RpcError as exc:
+            logger.warning("gRPC stream error for %s: %s %s", self._target, type(exc).__name__, exc)
             self._pending.cancel_all()
 
     async def _handle_server_request(self, envelope: mcp_pb2.ServerEnvelope) -> None:
@@ -278,6 +304,7 @@ class Client:
         )
 
     async def close(self) -> None:
+        logger.debug("closing connection to %s", self._target)
         # Signal outbound iterator to stop
         if hasattr(self, "_write_queue"):
             await self._write_queue.put(None)
@@ -290,6 +317,7 @@ class Client:
         self._pending.cancel_all()
         if self._channel:
             await self._channel.close()
+        logger.debug("closed connection to %s", self._target)
 
     async def __aenter__(self):
         await self.connect()

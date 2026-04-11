@@ -73,6 +73,16 @@ async def test_grpc_read_resource(echo_server):
 
 
 @pytest.mark.asyncio
+async def test_grpc_list_tools_twice(echo_server):
+    """Session stays alive between requests — list_tools works on the same stream."""
+    async with Client(f"localhost:{echo_server.port}") as client:
+        result1 = await client.list_tools()
+        result2 = await client.list_tools()
+        assert {t.name for t in result1.items} == {t.name for t in result2.items}
+        assert {t.name for t in result1.items} == {"echo", "reverse"}
+
+
+@pytest.mark.asyncio
 async def test_grpc_error_unknown_tool(echo_server):
     async with Client(f"localhost:{echo_server.port}") as client:
         from mcp_grpc.errors import McpError

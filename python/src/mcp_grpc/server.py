@@ -266,12 +266,45 @@ class FasterMCP:
         self._port = actual_port
         return grpc_server
 
+    def _print_banner(self, port: int) -> None:
+        from mcp_grpc import __version__
+
+        title = "█▀▀ ▄▀█ █▀ ▀█▀ █▀▀ █▀█   █▀▄▀█ █▀▀ █▀█"
+        sub   = "█▀  █▀█ ▄█  █  ██▄ █▀▄   █ ▀ █ █▄▄ █▀▀"
+        server_line = f"Server:  {self.name}, {self.version}"
+        version_line = f"FasterMCP {__version__}"
+        transport_line = f"grpc://0.0.0.0:{port}"
+
+        W = 76
+        def row(content: str = "") -> str:
+            pad = W - 2 - len(content)
+            left = pad // 2
+            right = pad - left
+            return f"│{' ' * left}{content}{' ' * right}│"
+
+        lines = [
+            f"╭{'─' * W}╮",
+            row(),
+            row(),
+            row(title),
+            row(sub),
+            row(),
+            row(),
+            row(version_line),
+            row(),
+            row(f"🖥  {server_line}"),
+            row(f"🚀 Transport:  {transport_line}"),
+            row(),
+            f"╰{'─' * W}╯",
+        ]
+        print("\n" + "\n".join(lines) + "\n", flush=True)
+
     def run(self, port: int = 50051) -> None:
         """Blocking entry point — starts the gRPC server."""
 
         async def _run():
             grpc_server = await self._start_grpc(port)
-            print(f"FasterMCP '{self.name}' listening on port {self._port}", flush=True)
+            self._print_banner(self._port)
             await grpc_server.wait_for_termination()
 
         asyncio.run(_run())
