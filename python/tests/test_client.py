@@ -1,13 +1,13 @@
 import pytest
 
 from mcp_grpc.client import ListResult
-from mcp_grpc.server import McpServer
+from mcp_grpc.server import FasterMCP
 from mcp_grpc.testing import InProcessChannel
 
 
 @pytest.fixture
 def echo_server():
-    server = McpServer(name="test-server", version="0.1")
+    server = FasterMCP(name="test-server", version="0.1")
 
     @server.tool(description="Echo text back")
     async def echo(text: str) -> str:
@@ -68,7 +68,7 @@ async def test_ping(echo_server):
 
 @pytest.mark.asyncio
 async def test_list_resource_templates():
-    server = McpServer(name="test-server", version="0.1")
+    server = FasterMCP(name="test-server", version="0.1")
 
     @server.resource_template(
         uri_template="file:///{path}",
@@ -93,7 +93,7 @@ async def test_initialize(echo_server):
 
 @pytest.mark.asyncio
 async def test_list_tools_returns_list_result():
-    server = McpServer(name="test-server", version="0.1")
+    server = FasterMCP(name="test-server", version="0.1")
 
     @server.tool(description="Echo")
     async def echo(text: str) -> str:
@@ -110,7 +110,7 @@ async def test_list_tools_returns_list_result():
 @pytest.mark.asyncio
 async def test_cancel_no_crash():
     """Cancellation is acknowledged without error."""
-    server = McpServer(name="test-server", version="0.1")
+    server = FasterMCP(name="test-server", version="0.1")
 
     @server.tool(description="Echo")
     async def echo(text: str) -> str:
@@ -131,7 +131,7 @@ async def test_call_tool_after_concurrent_refactor(echo_server):
 
 @pytest.mark.asyncio
 async def test_complete():
-    server = McpServer(name="test-server", version="0.1")
+    server = FasterMCP(name="test-server", version="0.1")
 
     @server.prompt(description="Greet someone")
     async def greet(language: str) -> str:
