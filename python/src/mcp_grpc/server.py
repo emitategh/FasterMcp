@@ -3,11 +3,10 @@
 from __future__ import annotations
 
 import asyncio
-import inspect
 import json
 import logging
-from collections.abc import Awaitable, Callable
-from dataclasses import dataclass, replace
+from collections.abc import Callable
+from dataclasses import replace
 from typing import Any
 
 from grpc import aio as grpc_aio
@@ -17,25 +16,12 @@ from mcp_grpc._utils import _paginate, _prefix_resource_uri
 from mcp_grpc.context import Context
 from mcp_grpc.errors import McpError
 from mcp_grpc.middleware import Middleware
+from mcp_grpc.prompts import PromptManager, RegisteredCompletion, RegisteredPrompt
 from mcp_grpc.resources import RegisteredResource, RegisteredResourceTemplate, ResourceManager
 from mcp_grpc.session import PendingRequests
 from mcp_grpc.tools import RegisteredTool, ToolManager
 
 logger = logging.getLogger("mcp_grpc.server")
-
-
-@dataclass
-class RegisteredPrompt:
-    name: str
-    description: str
-    arguments: list[dict[str, Any]]
-    handler: Callable[..., Awaitable[Any]]
-
-
-@dataclass
-class RegisteredCompletion:
-    ref_name: str
-    handler: Callable[..., Awaitable[list[str]]]
 
 
 class _McpServicer(mcp_pb2_grpc.McpServicer):
@@ -437,8 +423,7 @@ class FasterMCP:
         self.page_size = page_size
         self._tool_manager = ToolManager(middleware=middleware)
         self._resource_manager = ResourceManager()
-        self._prompts: dict[str, RegisteredPrompt] = {}
-        self._completions: dict[str, RegisteredCompletion] = {}
+        self._prompt_manager = PromptManager()
         self._session_queues: list[asyncio.Queue] = []
         self._client_notification_handlers: dict[str, list[Callable]] = {}
         self._subscribe_handlers: list[Callable] = []
@@ -454,6 +439,14 @@ class FasterMCP:
     @property
     def _resource_templates(self) -> dict[str, RegisteredResourceTemplate]:
         return self._resource_manager._resource_templates
+
+    @property
+    def _prompts(self) -> dict[str, RegisteredPrompt]:
+        return self._prompt_manager._prompts
+
+    @property
+    def _completions(self) -> dict[str, RegisteredCompletion]:
+        return self._prompt_manager._completions
 
     def tool(
         self,
@@ -486,36 +479,10 @@ class FasterMCP:
         return self._resource_manager.resource(uri, description=description, mime_type=mime_type)
 
     def prompt(self, *, description: str | None = None) -> Callable[[Callable], Callable]:
-        def decorator(fn: Callable) -> Callable:
-            desc = description or (fn.__doc__ or "").strip()
-            sig = inspect.signature(fn)
-            arguments = [
-                {
-                    "name": p_name,
-                    "description": "",
-                    "required": p.default is inspect.Parameter.empty,
-                }
-                for p_name, p in sig.parameters.items()
-            ]
-            self._prompts[fn.__name__] = RegisteredPrompt(
-                name=fn.__name__,
-                description=desc,
-                arguments=arguments,
-                handler=fn,
-            )
-            return fn
-
-        return decorator
+        return self._prompt_manager.prompt(description=description)
 
     def completion(self, ref_name: str) -> Callable:
-        def decorator(fn: Callable) -> Callable:
-            self._completions[ref_name] = RegisteredCompletion(
-                ref_name=ref_name,
-                handler=fn,
-            )
-            return fn
-
-        return decorator
+        return self._prompt_manager.completion(ref_name)
 
     def resource_template(
         self,
@@ -535,7 +502,7 @@ class FasterMCP:
         return self._resource_manager.list_registered_resources()
 
     def list_registered_prompts(self) -> list[RegisteredPrompt]:
-        return list(self._prompts.values())
+        return self._prompt_manager.list_registered_prompts()
 
     def list_registered_resource_templates(self) -> list[RegisteredResourceTemplate]:
         return self._resource_manager.list_registered_resource_templates()
