@@ -20,7 +20,7 @@ from pathlib import Path
 
 from mcp import ClientSession
 from mcp.client.streamable_http import streamablehttp_client
-from mcp_grpc import McpClient
+from mcp_grpc import Client as McpClient
 
 GRPC_PORT = 50052
 HTTP_PORT = 8001
