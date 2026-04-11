@@ -17,7 +17,7 @@ import json
 import logging
 from typing import Any
 
-from mcp_grpc.client import McpClient
+from mcp_grpc.client import Client
 
 logger = logging.getLogger(__name__)
 
@@ -35,7 +35,7 @@ class MCPServerGRPC(MCPServer):
     """LiveKit-compatible MCP server backed by FasterMCP's gRPC transport.
 
     Plugs into LiveKit's ``mcp_servers=[]`` parameter on ``AgentSession``.
-    Tools are discovered and called over gRPC via ``McpClient``.
+    Tools are discovered and called over gRPC via ``Client``.
 
     Args:
         address: gRPC server address (e.g. "mcp-server:50051")
@@ -55,7 +55,7 @@ class MCPServerGRPC(MCPServer):
     ) -> None:
         super().__init__(client_session_timeout_seconds=client_session_timeout_seconds)
         self._address = address
-        self._grpc_client = McpClient(address)
+        self._grpc_client = Client(address)
         self._allowed_tools = set(allowed_tools) if allowed_tools else None
         self._sampling_handler = sampling_handler
         self._elicitation_handler = elicitation_handler
