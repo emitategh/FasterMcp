@@ -2,7 +2,7 @@
 
 **MCP over native gRPC.** 17x lower latency than Streamable HTTP.
 
-FasterMCP is a gRPC-native transport for the [Model Context Protocol](https://modelcontextprotocol.io/) (MCP). Instead of JSON-RPC over HTTP, it uses protobuf messages over a persistent bidirectional gRPC stream — the same MCP semantics (tools, resources, prompts), a fundamentally faster wire format.
+FasterMCP is a gRPC-native transport for the [Model Context Protocol](https://modelcontextprotocol.io/) (MCP). Instead of JSON-RPC over HTTP, it uses protobuf messages over a persistent bidirectional gRPC stream — the same MCP semantics (tools, resources, prompts, sampling, elicitation), a fundamentally faster wire format.
 
 | | MCP (stdio / Streamable HTTP) | FasterMCP (gRPC) |
 |---|---|---|
@@ -34,20 +34,120 @@ server.run(port=50051)
 from mcp_grpc import McpClient
 
 async with McpClient("localhost:50051") as client:
-    tools = await client.list_tools()
+    result = await client.list_tools()
+    tools = result.items  # ListResult with pagination support
+
     result = await client.call_tool("echo", {"text": "hello"})
     print(result.content[0].text)  # "hello"
 ```
 
-### LiveKit agent integration
+### Sampling (LLM completion mid-tool)
+
+Tools can request LLM completions from the client using `ToolContext`:
 
 ```python
-from mcp_grpc import McpClient
+from mcp_grpc import McpServer, ToolContext
 
-mcp = McpClient("localhost:50051")
-await mcp.connect()
-mcp_tools = await mcp.as_function_tools()  # → list[function_tool]
+server = McpServer(name="my-server", version="1.0.0")
+
+@server.tool(description="Summarize text using LLM")
+async def summarize(text: str, ctx: ToolContext) -> str:
+    result = await ctx.sample(
+        messages=[{"role": "user", "content": f"Summarize: {text}"}],
+        max_tokens=200,
+    )
+    return result.content.text
 ```
+
+The client registers a handler to provide the LLM:
+
+```python
+async def my_sampling_handler(request):
+    # Call your LLM here with request.messages
+    return mcp_pb2.SamplingResponse(
+        role="assistant",
+        content=mcp_pb2.ContentItem(type="text", text="..."),
+        model="gpt-4", stop_reason="end",
+    )
+
+client = McpClient("localhost:50051")
+client.set_sampling_handler(my_sampling_handler)
+await client.connect()
+```
+
+### Elicitation (user input mid-tool)
+
+Tools can ask the user for input:
+
+```python
+@server.tool(description="Deploy to production")
+async def deploy(service: str, ctx: ToolContext) -> str:
+    response = await ctx.elicit(
+        message=f"Deploy {service} to prod?",
+        schema='{"type": "object", "properties": {"confirm": {"type": "boolean"}}}',
+    )
+    if response.action == "accept":
+        return f"Deployed {service}"
+    return "Cancelled"
+```
+
+### Resource templates
+
+```python
+@server.resource_template(
+    uri_template="file:///{path}",
+    description="Read a file by path",
+)
+async def read_file(path: str) -> str:
+    return open(path).read()
+```
+
+### Completions
+
+```python
+@server.completion("my-prompt")
+async def complete_language(argument_name: str, value: str) -> list[str]:
+    options = ["english", "spanish", "french", "german"]
+    return [o for o in options if o.startswith(value)]
+```
+
+### Notifications
+
+```python
+# Server emits
+server.notify_tools_list_changed()
+server.log("info", "Something happened")
+server.progress("task-1", 0.5, 1.0)
+
+# Client receives
+client.on_notification("tools_list_changed", my_callback)
+client.on_notification("log", my_log_handler)
+
+# Client emits
+await client.notify_roots_list_changed()
+
+# Server receives
+server.on_roots_list_changed(my_handler)
+```
+
+## Full MCP feature support
+
+| Feature | Status |
+|---|---|
+| Tools (list, call) | Supported |
+| Resources (list, read, subscribe) | Supported |
+| Resource templates | Supported |
+| Prompts (list, get) | Supported |
+| Completions | Supported |
+| Pagination (all list methods) | Supported |
+| Sampling (`ctx.sample()`) | Supported |
+| Elicitation (`ctx.elicit()`) | Supported |
+| Roots | Supported |
+| Notifications (bidirectional) | Supported |
+| Logging / Progress | Supported |
+| Cancellation | Supported |
+| Capability negotiation | Supported |
+| Ping/Pong | Supported |
 
 ## Installation
 
@@ -63,7 +163,7 @@ cd python
 uv run pytest tests/ -v
 ```
 
-23 tests covering: client operations, server registration, session management, and full gRPC integration over loopback.
+37 tests covering: tool context injection, sampling/elicitation round-trips, resource templates, completions, pagination, notifications, and full gRPC integration over loopback.
 
 ## Benchmark: FasterMCP vs FastMCP (Streamable HTTP)
 
@@ -98,35 +198,35 @@ FastMCP (HTTP)      9.68ms   14.06ms   18.22ms    7.59ms   35.72ms   10.40ms    
 
 ```
 FasterMCP/
-├── proto/mcp.proto              ← Protocol definition (single source of truth)
+├── proto/mcp.proto              <- Protocol definition (single source of truth)
 ├── python/
 │   ├── src/mcp_grpc/
-│   │   ├── server.py            ← McpServer: decorator API, gRPC servicer
-│   │   ├── client.py            ← McpClient: connect, discover, call tools
-│   │   ├── session.py           ← Pending request correlation
-│   │   ├── errors.py            ← McpError
-│   │   └── testing.py           ← InProcessChannel for unit tests
-│   └── tests/                   ← 23 tests (unit + integration)
+│   │   ├── server.py            <- McpServer, ToolContext, decorator API, gRPC servicer
+│   │   ├── client.py            <- McpClient, ListResult, sampling/elicitation handlers
+│   │   ├── session.py           <- PendingRequests, NotificationRegistry
+│   │   ├── errors.py            <- McpError
+│   │   └── testing.py           <- InProcessChannel for unit tests
+│   └── tests/                   <- 37 tests (unit + integration)
 ├── benchmark/
-│   ├── run_benchmark.py         ← Latency harness
-│   ├── grpc_server.py           ← FasterMCP echo server (gRPC)
-│   └── fastmcp_server.py        ← FastMCP echo server (Streamable HTTP)
+│   ├── run_benchmark.py         <- Latency harness
+│   ├── grpc_server.py           <- FasterMCP echo server (gRPC)
+│   └── fastmcp_server.py        <- FastMCP echo server (Streamable HTTP)
 └── docs/superpowers/
-    ├── specs/                   ← Design specs
-    └── plans/                   ← Implementation plans
+    ├── specs/                   <- Design specs
+    └── plans/                   <- Implementation plans
 ```
 
 ## Design
 
 - **One service, one bidi streaming RPC.** `Session(stream ClientEnvelope) returns (stream ServerEnvelope)` carries all messages — mirroring MCP's duplex channel.
-- **Protobuf envelopes with `oneof`.** Each envelope carries a `request_id` and one message type. The SDK handles correlation transparently.
-- **`input_schema` and `arguments` as JSON strings.** Tool schemas are JSON Schema objects; encoding them as proto messages would be brittle. String serialization preserves full flexibility.
-- **Notifications carry `request_id = 0`.** Fire-and-forget; no response expected.
+- **Write-queue servicer.** Concurrent reader/writer tasks per session. Enables notifications (server push), sampling/elicitation (mid-handler server-to-client requests), and concurrent tool execution.
+- **ToolContext dependency injection.** Tool handlers that declare `ctx: ToolContext` get sampling/elicitation capabilities injected automatically. Tools without it work unchanged.
+- **Protobuf envelopes with `oneof`.** Each envelope carries a `request_id` and one message type. The SDK handles correlation transparently via `PendingRequests` (same pattern as the official MCP SDK's `BaseSession`).
 
 See [design spec](docs/superpowers/specs/2026-04-10-mcp-grpc-design.md) for the full protocol definition.
 
 ## Status
 
-**Python POC: complete and smoke-tested.** The library is integrated into a [LiveKit](https://livekit.io/) voice agent, with tools callable end-to-end: LLM → McpClient → gRPC → McpServer → response.
+**Python SDK: feature-complete with full MCP spec parity.** Integrated into a [LiveKit](https://livekit.io/) voice agent for low-latency tool calling.
 
-Next steps: TypeScript SDK, production hardening (TLS/mTLS, sampling/elicitation).
+Next steps: TypeScript SDK, TLS/mTLS, PyPI packaging, CI pipeline.
