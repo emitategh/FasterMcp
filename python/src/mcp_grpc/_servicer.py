@@ -22,21 +22,46 @@ logger = logging.getLogger("mcp_grpc.server")
 
 
 class _McpServicer(mcp_pb2_grpc.McpServicer):
-    """Handles bidi Session stream via asyncio.wait race loop.
-
-    The generator races between two futures on every iteration:
-      - read_task  — next client message from request_iterator
-      - write_task — next outbound envelope from write_queue
-
-    Because the generator is always inside an active __anext__() call
-    (inside asyncio.wait), gRPC keeps pumping request_iterator —
-    avoiding the deadlock that occurs when reads happen in a background task.
-    """
 
     def __init__(self, server: FasterMCP) -> None:
         self._server = server
 
-    async def Session(self, request_iterator, context):  # noqa: N802
+    async def Session(self, request_iterator, context):
+        """Handle one client connection over the bidi stream.
+
+        Data flow
+        ---------
+        Client → server:  gRPC pumps ``request_iterator``; each item is a
+            ``ClientEnvelope`` dispatched by ``_handle_envelope()``.
+
+        Server → client:  handler coroutines push ``ServerEnvelope`` objects
+            into ``write_queue``.  The race loop dequeues them and ``yield``s
+            them back through the gRPC stream.
+
+        Queue roles
+        -----------
+        ``write_queue`` — outbound messages waiting to be yielded to the
+            client.  Named from the *caller's* perspective: handlers *write*
+            responses into it; the loop *reads* from it to yield.
+
+        Race loop
+        ---------
+        Two futures compete on every ``asyncio.wait`` iteration:
+
+        ``read_task``  — ``request_iterator.__anext__()``
+            Resolves when the client sends a new message.
+            On ``StopAsyncIteration`` (client closed the stream): sets
+            ``eof = True``, waits for in-flight tool tasks to finish, then
+            puts ``None`` into ``write_queue`` to trigger shutdown.
+
+        ``write_task`` — ``write_queue.get()``
+            Resolves when a handler has queued an outbound envelope.
+            ``None`` is the sentinel that breaks the loop and ends the stream.
+
+        Keeping the generator inside an active ``__anext__()`` at all times
+        is what lets gRPC continue pumping inbound messages — a background
+        reader task would not be visible to the pump and would deadlock.
+        """
         sid = uuid.uuid4().hex[:8]
         logger.debug("session %s started", sid)
         session_start = time.monotonic()
@@ -400,10 +425,6 @@ class _McpServicer(mcp_pb2_grpc.McpServicer):
                         ),
                     )
                 )
-
-        # ── Main loop: race between incoming requests and outgoing responses ──
-        # asyncio.wait keeps __anext__() active the whole time, so gRPC
-        # continues pumping request_iterator — no deadlock possible.
 
         read_task: asyncio.Future = asyncio.ensure_future(request_iterator.__anext__())
         write_task: asyncio.Future = asyncio.ensure_future(write_queue.get())
