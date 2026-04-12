@@ -80,6 +80,53 @@ session = AgentSession(
 )
 ```
 
+### Authentication
+
+```python
+from rapidmcp import RapidMCP
+
+# Static token
+server = RapidMCP(name="my-server", version="1.0.0", auth=lambda token: token == "secret")
+
+# Async JWT / OAuth2 introspection
+async def verify(token: str) -> bool:
+    resp = await httpx.AsyncClient().post("https://auth.example.com/introspect", data={"token": token})
+    return resp.json().get("active") is True
+
+server = RapidMCP(name="my-server", version="1.0.0", auth=verify)
+```
+
+Client sends the token as a Bearer credential:
+
+```python
+async with Client("localhost:50051", token="secret") as client:
+    ...
+```
+
+### TLS / mTLS
+
+```python
+from rapidmcp import RapidMCP, TLSConfig, Client, ClientTLSConfig
+
+# Server-only TLS
+server = RapidMCP(name="my-server", version="1.0.0", tls=TLSConfig(cert="server.crt", key="server.key"))
+
+# Mutual TLS (mTLS) — requires client certificate
+server = RapidMCP(name="my-server", version="1.0.0", tls=TLSConfig(cert="server.crt", key="server.key", ca="ca.crt"))
+
+# Client: verify server with custom CA
+async with Client("localhost:50051", tls=ClientTLSConfig(ca="ca.crt")) as client:
+    ...
+
+# Client: mTLS (present client certificate)
+async with Client("localhost:50051", tls=ClientTLSConfig(ca="ca.crt", cert="client.crt", key="client.key")) as client:
+    ...
+
+# Combined: TLS + token auth
+async with Client("localhost:50051", tls=ClientTLSConfig(ca="ca.crt"), token="secret") as client:
+    ...
+```
+
 ### Middleware
 
 ```python
@@ -178,6 +225,8 @@ rapidmcp version
 | Middleware (`on_tool_call` chain) | ✅ |
 | Server mounting / composition | ✅ |
 | CLI (`rapidmcp run server.py`) | ✅ |
+| Token authentication (`auth=` callable, sync or async) | ✅ |
+| TLS / mTLS (`TLSConfig`, `ClientTLSConfig`) | ✅ |
 | LangChain / LangGraph integration | ✅ |
 | LiveKit integration | ✅ |
 
@@ -222,7 +271,7 @@ mcp-grpc/
 │   │   └── integrations/
 │   │       ├── langchain.py     ← MCPToolkit for LangChain / LangGraph
 │   │       └── livekit.py       ← MCPServerGRPC for livekit-agents
-│   └── tests/                   ← 200 tests (unit + integration)
+│   └── tests/                   ← 230 tests (unit + integration + Docker TLS)
 └── benchmark/                   ← Latency harness vs FastMCP HTTP
 ```
 
@@ -239,7 +288,7 @@ mcp-grpc/
 ```bash
 cd python
 uv sync --extra dev    # install all deps
-uv run pytest -v       # run 200 tests
+uv run pytest -v       # run 230 tests
 uv run ruff check      # lint
 uv run ruff format     # format
 ```

@@ -106,6 +106,50 @@ session = AgentSession(
 pip install 'rapidmcp[livekit]'
 ```
 
+## Authentication
+
+```python
+from rapidmcp import RapidMCP
+
+# Static token
+server = RapidMCP(name="my-server", version="1.0.0", auth=lambda token: token == "secret")
+
+# Async JWT / OAuth2 introspection
+async def verify(token: str) -> bool:
+    resp = await httpx.AsyncClient().post("https://auth.example.com/introspect", data={"token": token})
+    return resp.json().get("active") is True
+
+server = RapidMCP(name="my-server", version="1.0.0", auth=verify)
+```
+
+Client:
+
+```python
+async with Client("localhost:50051", token="secret") as client:
+    ...
+```
+
+## TLS / mTLS
+
+```python
+from rapidmcp import RapidMCP, TLSConfig, Client, ClientTLSConfig
+
+# Server-only TLS
+server = RapidMCP(name="my-server", version="1.0.0", tls=TLSConfig(cert="server.crt", key="server.key"))
+
+# Mutual TLS
+server = RapidMCP(name="my-server", version="1.0.0", tls=TLSConfig(cert="server.crt", key="server.key", ca="ca.crt"))
+
+# Client with custom CA
+async with Client("localhost:50051", tls=ClientTLSConfig(ca="ca.crt")) as client: ...
+
+# Client mTLS
+async with Client("localhost:50051", tls=ClientTLSConfig(ca="ca.crt", cert="client.crt", key="client.key")) as client: ...
+
+# TLS + token
+async with Client("localhost:50051", tls=ClientTLSConfig(ca="ca.crt"), token="secret") as client: ...
+```
+
 ## Full MCP spec coverage
 
 | Feature | API |
@@ -117,6 +161,8 @@ pip install 'rapidmcp[livekit]'
 | Elicitation | `ctx.elicit()` — server requests user input from client |
 | Logging | `ctx.info/debug/warning/error()` |
 | Notifications | bidirectional push, resource subscribe |
+| Authentication | `auth=` callable (sync or async), bearer token |
+| TLS / mTLS | `TLSConfig`, `ClientTLSConfig` |
 | Middleware | `TimingMiddleware`, `LoggingMiddleware`, `TimeoutMiddleware`, `ValidationMiddleware` |
 | Pagination | cursor-based on all list endpoints |
 | Cancellation | in-flight request cancellation |
