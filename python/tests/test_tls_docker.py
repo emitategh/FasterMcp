@@ -92,10 +92,12 @@ def _make_server_cert(
         .not_valid_before(now)
         .not_valid_after(now + datetime.timedelta(days=1))
         .add_extension(
-            x509.SubjectAlternativeName([
-                x509.DNSName("localhost"),
-                x509.IPAddress(ipaddress.IPv4Address("127.0.0.1")),
-            ]),
+            x509.SubjectAlternativeName(
+                [
+                    x509.DNSName("localhost"),
+                    x509.IPAddress(ipaddress.IPv4Address("127.0.0.1")),
+                ]
+            ),
             critical=False,
         )
         .sign(ca_key, hashes.SHA256())
@@ -110,9 +112,7 @@ def _make_client_cert(
     now = datetime.datetime.now(datetime.timezone.utc)
     return (
         x509.CertificateBuilder()
-        .subject_name(
-            x509.Name([x509.NameAttribute(NameOID.COMMON_NAME, "test-client")])
-        )
+        .subject_name(x509.Name([x509.NameAttribute(NameOID.COMMON_NAME, "test-client")]))
         .issuer_name(ca_cert.subject)
         .public_key(client_key.public_key())
         .serial_number(x509.random_serial_number())
@@ -129,12 +129,12 @@ def _make_client_cert(
 
 @dataclass
 class PKI:
-    cert_dir: str       # host path — mounted as /certs in Docker
-    ca_cert: str        # host path to CA cert PEM
-    server_cert: str    # host path to server cert PEM
-    server_key: str     # host path to server key PEM
-    client_cert: str    # host path to client cert PEM
-    client_key: str     # host path to client key PEM
+    cert_dir: str  # host path — mounted as /certs in Docker
+    ca_cert: str  # host path to CA cert PEM
+    server_cert: str  # host path to server cert PEM
+    server_key: str  # host path to server key PEM
+    client_cert: str  # host path to client cert PEM
+    client_key: str  # host path to client key PEM
     wrong_ca_cert: str  # host path to an untrusted CA cert PEM
 
 
@@ -192,9 +192,7 @@ def _docker_available() -> bool:
         return False
 
 
-pytestmark = pytest.mark.skipif(
-    not _docker_available(), reason="Docker daemon not available"
-)
+pytestmark = pytest.mark.skipif(not _docker_available(), reason="Docker daemon not available")
 
 
 class _DockerTLSServer:
@@ -343,3 +341,23 @@ async def test_docker_mtls_no_client_cert_rejected(pki):
             async with asyncio.timeout(15):
                 async with Client(f"localhost:{srv.port}", tls=tls) as client:
                     await client.call_tool("echo", {"text": "hi"})
+
+
+@pytest.mark.asyncio
+async def test_docker_tls_and_token_auth(pki):
+    """TLS + token auth: correct token succeeds; wrong token gets UNAUTHENTICATED."""
+    with _DockerTLSServer("tls_auth_echo.py", pki, ["secret"]) as srv:
+        tls = ClientTLSConfig(ca=pki.ca_cert)
+
+        # Correct token — should succeed
+        async with asyncio.timeout(15):
+            async with Client(f"localhost:{srv.port}", tls=tls, token="secret") as client:
+                result = await client.call_tool("echo", {"text": "hi"})
+        assert result.content[0].text == "hi"
+
+        # Wrong token — should get UNAUTHENTICATED (TLS handshake succeeds; token rejected)
+        with pytest.raises(grpc.aio.AioRpcError) as exc_info:
+            async with asyncio.timeout(15):
+                async with Client(f"localhost:{srv.port}", tls=tls, token="wrong") as client:
+                    await client.call_tool("echo", {"text": "hi"})
+        assert exc_info.value.code() == grpc.StatusCode.UNAUTHENTICATED
