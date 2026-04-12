@@ -28,6 +28,7 @@ import base64
 import logging
 from typing import Any
 
+from rapidmcp.auth import ClientTLSConfig
 from rapidmcp.client import Client
 from rapidmcp.types import CallToolResult, Tool
 
@@ -204,6 +205,8 @@ class MCPToolkit:
 
     Args:
         address: gRPC server address, e.g. ``"mcp-server:50051"``.
+        token: Optional bearer token sent as ``authorization`` metadata on every call.
+        tls: Optional :class:`~rapidmcp.auth.ClientTLSConfig` for TLS/mTLS connections.
         allowed_tools: Optional allowlist of tool names.  ``None`` = all tools.
 
     Example::
@@ -217,10 +220,12 @@ class MCPToolkit:
         self,
         address: str,
         *,
+        token: str | None = None,
+        tls: ClientTLSConfig | None = None,
         allowed_tools: list[str] | None = None,
     ) -> None:
         self._address = address
-        self._client = Client(address)
+        self._client = Client(address, token=token, tls=tls)
         self._allowed_tools = set(allowed_tools) if allowed_tools else None
 
     @property
