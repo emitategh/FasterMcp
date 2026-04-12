@@ -62,8 +62,6 @@ class _AuthInterceptor(grpc_aio.ServerInterceptor):
         if handler is None:
             return handler
 
-        verify = self._verify
-
         # Wrap the actual handler function (stream_stream for bidi streaming)
         if handler.stream_stream is not None:
             original = handler.stream_stream

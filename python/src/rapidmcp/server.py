@@ -14,8 +14,8 @@ from grpc import aio as grpc_aio
 from rapidmcp._generated import mcp_pb2, mcp_pb2_grpc
 from rapidmcp._servicer import _McpServicer
 from rapidmcp._utils import _prefix_resource_uri
-from rapidmcp.context import Context
 from rapidmcp.auth import TLSConfig, _AuthInterceptor, _build_server_credentials
+from rapidmcp.context import Context
 from rapidmcp.middleware import Middleware
 from rapidmcp.prompts import PromptManager, RegisteredCompletion, RegisteredPrompt
 from rapidmcp.resources import RegisteredResource, RegisteredResourceTemplate, ResourceManager
