@@ -5,7 +5,7 @@ from __future__ import annotations
 import asyncio
 import json
 import logging
-from collections.abc import Callable
+from collections.abc import Awaitable, Callable
 from dataclasses import replace
 from typing import Any
 
@@ -15,6 +15,7 @@ from rapidmcp._generated import mcp_pb2, mcp_pb2_grpc
 from rapidmcp._servicer import _McpServicer
 from rapidmcp._utils import _prefix_resource_uri
 from rapidmcp.context import Context
+from rapidmcp.auth import TLSConfig, _AuthInterceptor, _build_server_credentials
 from rapidmcp.middleware import Middleware
 from rapidmcp.prompts import PromptManager, RegisteredCompletion, RegisteredPrompt
 from rapidmcp.resources import RegisteredResource, RegisteredResourceTemplate, ResourceManager
@@ -32,10 +33,14 @@ class RapidMCP:
         version: str,
         middleware: list[Middleware] | None = None,
         page_size: int | None = None,
+        auth: Callable[[str], bool | Awaitable[bool]] | None = None,
+        tls: TLSConfig | None = None,
     ) -> None:
         self.name = name
         self.version = version
         self.page_size = page_size
+        self._auth = auth
+        self._tls = tls
         self._tool_manager = ToolManager(middleware=middleware)
         self._resource_manager = ResourceManager()
         self._prompt_manager = PromptManager()
@@ -251,17 +256,25 @@ class RapidMCP:
         return await self._call_tool_with_dict(name, args, context)
 
     async def _start_grpc(self, port: int) -> grpc_aio.Server:
-        grpc_server = grpc_aio.server()
+        interceptors = [_AuthInterceptor(self._auth)] if self._auth else []
+        grpc_server = grpc_aio.server(interceptors=interceptors)
         mcp_pb2_grpc.add_McpServicer_to_server(_McpServicer(self), grpc_server)
+        server_credentials = _build_server_credentials(self._tls) if self._tls else None
         # Try IPv6 first, fall back to IPv4 on Windows
         try:
-            actual_port = grpc_server.add_insecure_port(f"[::]:{port}")
+            if server_credentials:
+                actual_port = grpc_server.add_secure_port(f"[::]:{port}", server_credentials)
+            else:
+                actual_port = grpc_server.add_insecure_port(f"[::]:{port}")
             await grpc_server.start()
         except (OSError, RuntimeError) as exc:
             logger.debug("IPv6 bind failed (%s), falling back to IPv4", exc)
-            grpc_server = grpc_aio.server()
+            grpc_server = grpc_aio.server(interceptors=interceptors)
             mcp_pb2_grpc.add_McpServicer_to_server(_McpServicer(self), grpc_server)
-            actual_port = grpc_server.add_insecure_port(f"127.0.0.1:{port}")
+            if server_credentials:
+                actual_port = grpc_server.add_secure_port(f"127.0.0.1:{port}", server_credentials)
+            else:
+                actual_port = grpc_server.add_insecure_port(f"127.0.0.1:{port}")
             await grpc_server.start()
         self._port = actual_port
         return grpc_server

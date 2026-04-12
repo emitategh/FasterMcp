@@ -37,16 +37,9 @@ class _AuthInterceptor(grpc_aio.ServerInterceptor):
     def __init__(self, verify: Callable[[str], bool | Awaitable[bool]]) -> None:
         self._verify = verify
 
-    async def intercept(
-        self,
-        method: Callable,
-        request_or_iterator,
-        context: grpc_aio.ServicerContext,
-        method_name: str,
-    ):
+    async def _check_token(self, context: grpc_aio.ServicerContext) -> bool:
         metadata = dict(context.invocation_metadata())
-        raw = metadata.get("authorization", "")
-        raw = raw.strip()
+        raw = metadata.get("authorization", "").strip()
         if raw.lower().startswith("bearer "):
             token = raw[7:].strip()
         else:
@@ -58,10 +51,65 @@ class _AuthInterceptor(grpc_aio.ServerInterceptor):
         except Exception:
             logger.warning("auth verify() raised unexpectedly", exc_info=True)
             ok = False
-        if not ok:
-            await context.abort(grpc.StatusCode.UNAUTHENTICATED, "Invalid token")
-            return
-        return await method(request_or_iterator, context)
+        return bool(ok)
+
+    async def intercept_service(
+        self,
+        continuation: Callable,
+        handler_call_details: grpc.HandlerCallDetails,
+    ) -> grpc.RpcMethodHandler:
+        handler = await continuation(handler_call_details)
+        if handler is None:
+            return handler
+
+        verify = self._verify
+
+        # Wrap the actual handler function (stream_stream for bidi streaming)
+        if handler.stream_stream is not None:
+            original = handler.stream_stream
+
+            async def auth_stream_stream(request_iterator, context):
+                if not await self._check_token(context):
+                    await context.abort(grpc.StatusCode.UNAUTHENTICATED, "Invalid token")
+                    return
+                return await original(request_iterator, context)
+
+            return handler._replace(stream_stream=auth_stream_stream)
+
+        if handler.unary_unary is not None:
+            original = handler.unary_unary
+
+            async def auth_unary_unary(request, context):
+                if not await self._check_token(context):
+                    await context.abort(grpc.StatusCode.UNAUTHENTICATED, "Invalid token")
+                    return
+                return await original(request, context)
+
+            return handler._replace(unary_unary=auth_unary_unary)
+
+        if handler.unary_stream is not None:
+            original = handler.unary_stream
+
+            async def auth_unary_stream(request, context):
+                if not await self._check_token(context):
+                    await context.abort(grpc.StatusCode.UNAUTHENTICATED, "Invalid token")
+                    return
+                return await original(request, context)
+
+            return handler._replace(unary_stream=auth_unary_stream)
+
+        if handler.stream_unary is not None:
+            original = handler.stream_unary
+
+            async def auth_stream_unary(request_iterator, context):
+                if not await self._check_token(context):
+                    await context.abort(grpc.StatusCode.UNAUTHENTICATED, "Invalid token")
+                    return
+                return await original(request_iterator, context)
+
+            return handler._replace(stream_unary=auth_stream_unary)
+
+        return handler
 
 
 def _build_server_credentials(tls: TLSConfig) -> grpc.ServerCredentials:
