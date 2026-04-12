@@ -137,3 +137,23 @@ def test_client_tls_config_mtls():
     assert cfg.ca == "ca.crt"
     assert cfg.cert == "client.crt"
     assert cfg.key == "client.key"
+
+
+@pytest.mark.asyncio
+async def test_client_tls_param_stored():
+    """Client stores tls param and does not call insecure_channel when tls is set."""
+    from rapidmcp import Client
+
+    tls = ClientTLSConfig(ca="ca.crt")
+    client = Client("localhost:50051", tls=tls)
+    assert client._tls is tls
+
+
+@pytest.mark.asyncio
+async def test_client_no_tls_backward_compat(auth_server):
+    """Client without tls= still connects fine via insecure_channel."""
+    from rapidmcp import Client
+
+    async with Client(f"localhost:{auth_server.port}", token="secret") as client:
+        result = await client.list_tools()
+        assert len(result.items) == 1

@@ -12,6 +12,7 @@ import grpc
 from grpc import aio as grpc_aio
 
 from rapidmcp._generated import mcp_pb2, mcp_pb2_grpc
+from rapidmcp.auth import ClientTLSConfig, _build_channel_credentials
 from rapidmcp.errors import McpError
 from rapidmcp.session import NotificationRegistry, PendingRequests
 from rapidmcp.types import (
@@ -45,9 +46,12 @@ class Client:
     supported for explicit lifecycle management.
     """
 
-    def __init__(self, target: str, token: str | None = None) -> None:
+    def __init__(
+        self, target: str, token: str | None = None, tls: ClientTLSConfig | None = None
+    ) -> None:
         self._target = target
         self._metadata = [("authorization", f"Bearer {token}")] if token is not None else []
+        self._tls = tls
         self._pending = PendingRequests()
         self._notifications = NotificationRegistry()
         self._channel: grpc_aio.Channel | None = None
@@ -81,7 +85,12 @@ class Client:
 
     async def connect(self) -> None:
         logger.debug("connecting to %s", self._target)
-        self._channel = grpc_aio.insecure_channel(self._target)
+        if self._tls:
+            self._channel = grpc_aio.secure_channel(
+                self._target, _build_channel_credentials(self._tls)
+            )
+        else:
+            self._channel = grpc_aio.insecure_channel(self._target)
         stub = mcp_pb2_grpc.McpStub(self._channel)
         self._write_queue: asyncio.Queue[mcp_pb2.ClientEnvelope] = asyncio.Queue()
         self._stream = stub.Session(self._outbound_iter(), metadata=self._metadata)
