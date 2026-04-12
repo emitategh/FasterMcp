@@ -157,3 +157,7 @@ async def test_client_no_tls_backward_compat(auth_server):
     async with Client(f"localhost:{auth_server.port}", token="secret") as client:
         result = await client.list_tools()
         assert len(result.items) == 1
+
+
+def test_client_tls_config_importable_from_rapidmcp():
+    from rapidmcp import ClientTLSConfig  # noqa: F401

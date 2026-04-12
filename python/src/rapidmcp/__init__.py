@@ -2,7 +2,7 @@
 
 __version__ = "0.1.0"
 
-from rapidmcp.auth import TLSConfig
+from rapidmcp.auth import ClientTLSConfig, TLSConfig
 from rapidmcp.client import Client
 from rapidmcp.content import Audio, Image
 from rapidmcp.context import Context
@@ -49,6 +49,7 @@ __all__ = [
     "BoolField",
     "CallToolResult",
     "Client",
+    "ClientTLSConfig",
     "CompleteResult",
     "ContentItem",
     "Context",
