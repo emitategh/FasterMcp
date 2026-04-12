@@ -321,3 +321,25 @@ async def test_docker_tls_insecure_client_rejected(pki):
             async with asyncio.timeout(15):
                 async with Client(f"localhost:{srv.port}") as client:
                     await client.call_tool("echo", {"text": "hi"})
+
+
+@pytest.mark.asyncio
+async def test_docker_mtls_valid_client_cert_accepted(pki):
+    """Client with CA + client cert+key connects to mTLS server."""
+    with _DockerTLSServer("tls_echo.py", pki, ["/certs/ca.crt"]) as srv:
+        tls = ClientTLSConfig(ca=pki.ca_cert, cert=pki.client_cert, key=pki.client_key)
+        async with asyncio.timeout(15):
+            async with Client(f"localhost:{srv.port}", tls=tls) as client:
+                result = await client.call_tool("echo", {"text": "mtls"})
+    assert result.content[0].text == "mtls"
+
+
+@pytest.mark.asyncio
+async def test_docker_mtls_no_client_cert_rejected(pki):
+    """Client without a client cert is rejected by mTLS server."""
+    with _DockerTLSServer("tls_echo.py", pki, ["/certs/ca.crt"]) as srv:
+        tls = ClientTLSConfig(ca=pki.ca_cert)  # CA only — no cert/key
+        with pytest.raises(Exception):
+            async with asyncio.timeout(15):
+                async with Client(f"localhost:{srv.port}", tls=tls) as client:
+                    await client.call_tool("echo", {"text": "hi"})
