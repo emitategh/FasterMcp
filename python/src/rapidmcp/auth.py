@@ -2,10 +2,10 @@
 
 from __future__ import annotations
 
-import asyncio
+import inspect
 import logging
 from collections.abc import Awaitable, Callable
-from dataclasses import dataclass, field
+from dataclasses import dataclass
 
 import grpc
 from grpc import aio as grpc_aio
@@ -23,7 +23,7 @@ class TLSConfig:
 
     cert: str
     key: str
-    ca: str = field(default="")
+    ca: str = ""
 
 
 class _AuthInterceptor(grpc_aio.ServerInterceptor):
@@ -46,10 +46,14 @@ class _AuthInterceptor(grpc_aio.ServerInterceptor):
     ):
         metadata = dict(context.invocation_metadata())
         raw = metadata.get("authorization", "")
-        token = raw.removeprefix("Bearer ").strip()
+        raw = raw.strip()
+        if raw.lower().startswith("bearer "):
+            token = raw[7:].strip()
+        else:
+            token = raw.strip()
         try:
             ok = self._verify(token)
-            if asyncio.iscoroutine(ok):
+            if inspect.isawaitable(ok):
                 ok = await ok
         except Exception:
             logger.warning("auth verify() raised unexpectedly", exc_info=True)
