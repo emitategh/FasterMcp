@@ -2,7 +2,7 @@ import grpc
 import pytest
 
 from rapidmcp import Client, RapidMCP
-from rapidmcp.auth import TLSConfig
+from rapidmcp.auth import ClientTLSConfig, TLSConfig
 
 
 def test_tls_config_required_fields():
@@ -116,3 +116,24 @@ async def test_no_auth_backward_compat():
 
 def test_tls_config_importable_from_rapidmcp():
     from rapidmcp import TLSConfig  # noqa: F401
+
+
+def test_client_tls_config_all_defaults():
+    cfg = ClientTLSConfig()
+    assert cfg.ca == ""
+    assert cfg.cert == ""
+    assert cfg.key == ""
+
+
+def test_client_tls_config_with_ca():
+    cfg = ClientTLSConfig(ca="ca.crt")
+    assert cfg.ca == "ca.crt"
+    assert cfg.cert == ""
+    assert cfg.key == ""
+
+
+def test_client_tls_config_mtls():
+    cfg = ClientTLSConfig(ca="ca.crt", cert="client.crt", key="client.key")
+    assert cfg.ca == "ca.crt"
+    assert cfg.cert == "client.crt"
+    assert cfg.key == "client.key"

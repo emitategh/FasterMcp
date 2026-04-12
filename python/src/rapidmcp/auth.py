@@ -126,3 +126,40 @@ def _build_server_credentials(tls: TLSConfig) -> grpc.ServerCredentials:
         root_certificates=ca_pem,
         require_client_auth=bool(ca_pem),
     )
+
+
+@dataclass
+class ClientTLSConfig:
+    """Paths to TLS certificate material for the gRPC client.
+
+    All fields are optional:
+
+    - Leave all empty to use system CA bundle (verify server cert, no client cert).
+    - Set ``ca`` to a custom CA PEM path for private/self-signed server certs.
+    - Set ``ca`` + ``cert`` + ``key`` to enable mutual TLS (mTLS).
+    """
+
+    ca: str = ""  # CA cert PEM path — empty = use system CAs
+    cert: str = ""  # client cert PEM path (mTLS only)
+    key: str = ""  # client private key PEM path (mTLS only)
+
+
+def _build_channel_credentials(tls: ClientTLSConfig) -> grpc.ChannelCredentials:
+    """Build SSL channel credentials from PEM file paths in *tls*."""
+    ca_pem = None
+    if tls.ca:
+        with open(tls.ca, "rb") as f:
+            ca_pem = f.read()
+    cert_pem = None
+    key_pem = None
+    if tls.cert:
+        with open(tls.cert, "rb") as f:
+            cert_pem = f.read()
+    if tls.key:
+        with open(tls.key, "rb") as f:
+            key_pem = f.read()
+    return grpc.ssl_channel_credentials(
+        root_certificates=ca_pem,
+        private_key=key_pem,
+        certificate_chain=cert_pem,
+    )
