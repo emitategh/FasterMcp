@@ -3,11 +3,9 @@
 from __future__ import annotations
 
 import asyncio
-import json
 import logging
 import time
-from dataclasses import dataclass
-from typing import Any
+from typing import Any, Literal
 
 import grpc
 from grpc import aio as grpc_aio
@@ -15,27 +13,36 @@ from grpc import aio as grpc_aio
 from mcp_grpc._generated import mcp_pb2, mcp_pb2_grpc
 from mcp_grpc.errors import McpError
 from mcp_grpc.session import NotificationRegistry, PendingRequests
+from mcp_grpc.types import (
+    CallToolResult,
+    CompleteResult,
+    GetPromptResult,
+    ListResult,
+    ReadResourceResult,
+    ServerInfo,
+    _convert_call_tool_result,
+    _convert_complete_result,
+    _convert_get_prompt_result,
+    _convert_prompt,
+    _convert_read_resource_result,
+    _convert_resource,
+    _convert_resource_template,
+    _convert_tool,
+)
 
 logger = logging.getLogger("mcp_grpc.client")
 
 
-@dataclass
-class ListResult:
-    """Result from a paginated list method."""
-
-    items: list
-    next_cursor: str | None
-
-
-@dataclass
-class ServerInfo:
-    server_name: str
-    server_version: str
-    capabilities: mcp_pb2.ServerCapabilities
-
-
 class Client:
-    """Connect to an MCP gRPC server and interact with it."""
+    """Connect to an MCP gRPC server and interact with it.
+
+    Supports reentrant ``async with`` usage — multiple nested or concurrent
+    ``async with client:`` blocks share one connection.  The underlying gRPC
+    channel is opened on the first entry and closed on the last exit.
+
+    Direct ``connect()`` / ``close()`` calls bypass ref-counting and are still
+    supported for explicit lifecycle management.
+    """
 
     def __init__(self, target: str) -> None:
         self._target = target
@@ -49,6 +56,7 @@ class Client:
         self._elicitation_handler = None
         self._roots_handler = None
         self._background_tasks: set[asyncio.Task] = set()
+        self._ref_count: int = 0
 
     def set_sampling_handler(self, handler) -> None:
         self._sampling_handler = handler
@@ -58,6 +66,15 @@ class Client:
 
     def set_roots_handler(self, handler) -> None:
         self._roots_handler = handler
+
+    @property
+    def is_connected(self) -> bool:
+        """True when a live gRPC channel and reader loop are active."""
+        return (
+            self._channel is not None
+            and self._reader_task is not None
+            and not self._reader_task.done()
+        )
 
     async def connect(self) -> None:
         logger.debug("connecting to %s", self._target)
@@ -99,7 +116,7 @@ class Client:
                 "request timed out: %s rid=%d after %.0fms (timeout=%.0fs)",
                 msg_type, rid, elapsed_ms, self._REQUEST_TIMEOUT,
             )
-            raise McpError(408, f"Request timed out: {msg_type} rid={rid}")
+            raise McpError(408, f"Request timed out: {msg_type} rid={rid}") from None
         elapsed_ms = (time.monotonic() - t0) * 1000
         logger.debug("← %s rid=%d %.1fms", msg_type, rid, elapsed_ms)
         return result
@@ -193,22 +210,28 @@ class Client:
             )
         )
 
+    # ------------------------------------------------------------------
+    # Public API
+    # ------------------------------------------------------------------
+
     async def list_tools(self, cursor: str | None = None) -> ListResult:
         env = mcp_pb2.ClientEnvelope(list_tools=mcp_pb2.ListToolsRequest(cursor=cursor or ""))
         resp = await self._request(env)
         return ListResult(
-            items=list(resp.tools),
+            items=[_convert_tool(t) for t in resp.tools],
             next_cursor=resp.next_cursor or None,
         )
 
-    async def call_tool(self, name: str, arguments: dict | None = None) -> mcp_pb2.CallToolResponse:
+    async def call_tool(self, name: str, arguments: dict | None = None) -> CallToolResult:
+        import json
         env = mcp_pb2.ClientEnvelope(
             call_tool=mcp_pb2.CallToolRequest(
                 name=name,
                 arguments=json.dumps(arguments or {}),
             ),
         )
-        return await self._request(env)
+        resp = await self._request(env)
+        return _convert_call_tool_result(resp)
 
     async def list_resources(self, cursor: str | None = None) -> ListResult:
         env = mcp_pb2.ClientEnvelope(
@@ -216,15 +239,16 @@ class Client:
         )
         resp = await self._request(env)
         return ListResult(
-            items=list(resp.resources),
+            items=[_convert_resource(r) for r in resp.resources],
             next_cursor=resp.next_cursor or None,
         )
 
-    async def read_resource(self, uri: str) -> mcp_pb2.ReadResourceResponse:
+    async def read_resource(self, uri: str) -> ReadResourceResult:
         env = mcp_pb2.ClientEnvelope(
             read_resource=mcp_pb2.ReadResourceRequest(uri=uri),
         )
-        return await self._request(env)
+        resp = await self._request(env)
+        return _convert_read_resource_result(resp)
 
     async def subscribe_resource(self, uri: str) -> None:
         """Subscribe to updates for a specific resource URI."""
@@ -239,17 +263,18 @@ class Client:
         env = mcp_pb2.ClientEnvelope(list_prompts=mcp_pb2.ListPromptsRequest(cursor=cursor or ""))
         resp = await self._request(env)
         return ListResult(
-            items=list(resp.prompts),
+            items=[_convert_prompt(p) for p in resp.prompts],
             next_cursor=resp.next_cursor or None,
         )
 
     async def get_prompt(
         self, name: str, arguments: dict[str, str] | None = None
-    ) -> mcp_pb2.GetPromptResponse:
+    ) -> GetPromptResult:
         env = mcp_pb2.ClientEnvelope(
             get_prompt=mcp_pb2.GetPromptRequest(name=name, arguments=arguments or {}),
         )
-        return await self._request(env)
+        resp = await self._request(env)
+        return _convert_get_prompt_result(resp)
 
     async def list_resource_templates(self, cursor: str | None = None) -> ListResult:
         env = mcp_pb2.ClientEnvelope(
@@ -259,31 +284,34 @@ class Client:
         )
         resp = await self._request(env)
         return ListResult(
-            items=list(resp.templates),
+            items=[_convert_resource_template(t) for t in resp.templates],
             next_cursor=resp.next_cursor or None,
         )
 
     async def complete(
         self,
-        ref_type: str,
+        ref_type: Literal["ref/prompt", "ref/resource"],
         ref_name: str,
         argument_name: str,
         value: str,
-    ) -> mcp_pb2.CompleteResponse:
+    ) -> CompleteResult:
         env = mcp_pb2.ClientEnvelope(
             complete=mcp_pb2.CompleteRequest(
                 ref=mcp_pb2.CompletionRef(type=ref_type, name=ref_name),
                 argument=mcp_pb2.CompletionArg(name=argument_name, value=value),
             )
         )
-        return await self._request(env)
+        resp = await self._request(env)
+        return _convert_complete_result(resp)
 
     def on_notification(self, notification_type: str, handler) -> None:
         self._notifications.register(notification_type, handler)
 
-    async def ping(self) -> None:
+    async def ping(self) -> bool:
+        """Ping the server. Returns True on success, raises McpError on failure."""
         env = mcp_pb2.ClientEnvelope(ping=mcp_pb2.PingRequest())
         await self._request(env)
+        return True
 
     async def cancel(self, target_request_id: int) -> None:
         await self._send(
@@ -317,11 +345,16 @@ class Client:
         self._pending.cancel_all()
         if self._channel:
             await self._channel.close()
+        self._ref_count = 0
         logger.debug("closed connection to %s", self._target)
 
     async def __aenter__(self):
-        await self.connect()
+        self._ref_count += 1
+        if self._ref_count == 1:
+            await self.connect()
         return self
 
     async def __aexit__(self, *exc):
-        await self.close()
+        self._ref_count -= 1
+        if self._ref_count == 0:
+            await self.close()

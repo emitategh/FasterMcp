@@ -23,7 +23,6 @@ Requires: pip install livekit-agents
 from __future__ import annotations
 
 import contextlib
-import json
 import logging
 from typing import Any
 
@@ -83,27 +82,37 @@ class MCPServerGRPC(MCPServer):
         for t in result.items:
             if self._allowed_tools and t.name not in self._allowed_tools:
                 continue
-            schema = json.loads(t.input_schema) if t.input_schema else {}
             _name, _desc = t.name, t.description
 
             async def _call(raw_arguments: dict[str, Any], _n: str = _name) -> str:
                 tool_result = await self._grpc_client.call_tool(_n, raw_arguments)
                 if tool_result.is_error:
                     raise ToolError(
-                        "\n".join(i.text for i in tool_result.content if i.text)
+                        "\n".join(c.text for c in tool_result.content if c.text)
                     )
                 if not tool_result.content:
                     raise ToolError(f"Tool '{_n}' returned no content")
+                c0 = tool_result.content[0]
                 if len(tool_result.content) == 1:
-                    return tool_result.content[0].text
-                return json.dumps(
-                    [{"type": i.type, "text": i.text} for i in tool_result.content]
-                )
+                    if c0.type == "text":
+                        return c0.text
+                    # image / audio — return base64 data with mime type
+                    import base64
+                    import json as _json
+                    return _json.dumps({"type": c0.type, "mimeType": c0.mime_type,
+                                        "data": base64.b64encode(c0.data).decode()})
+                import json as _json
+                return _json.dumps([
+                    {"type": c.type, "text": c.text} if c.type == "text"
+                    else {"type": c.type, "uri": c.uri} if c.type == "resource"
+                    else {"type": c.type, "mimeType": c.mime_type}
+                    for c in tool_result.content
+                ])
 
             tools.append(function_tool(_call, raw_schema={
                 "name": _name,
                 "description": _desc,
-                "parameters": schema,
+                "parameters": t.input_schema,
             }))
 
         self._lk_tools = tools

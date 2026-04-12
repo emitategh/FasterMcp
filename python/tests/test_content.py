@@ -167,11 +167,10 @@ async def test_list_tools_includes_output_schema(annotated_server):
         by_name = {t.name: t for t in result.items}
 
         t = by_name["safe_read"]
-        parsed = json.loads(t.output_schema)
-        assert parsed["type"] == "object"
-        assert "value" in parsed["properties"]
+        assert t.output_schema["type"] == "object"
+        assert "value" in t.output_schema["properties"]
 
-        assert by_name["plain"].output_schema == ""
+        assert by_name["plain"].output_schema is None
 
 
 # ---------------------------------------------------------------------------

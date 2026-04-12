@@ -2,15 +2,29 @@
 
 from __future__ import annotations
 
-import asyncio
 import json
 from typing import Any
 
 from mcp_grpc._generated import mcp_pb2
-from mcp_grpc.client import ListResult, ServerInfo
 from mcp_grpc.errors import McpError
 from mcp_grpc.server import FasterMCP, _McpServicer
 from mcp_grpc.session import PendingRequests
+from mcp_grpc.types import (
+    CallToolResult,
+    CompleteResult,
+    GetPromptResult,
+    ListResult,
+    ReadResourceResult,
+    ServerInfo,
+    _convert_call_tool_result,
+    _convert_complete_result,
+    _convert_get_prompt_result,
+    _convert_prompt,
+    _convert_read_resource_result,
+    _convert_resource,
+    _convert_resource_template,
+    _convert_tool,
+)
 
 
 class _AsyncMessageIter:
@@ -30,7 +44,7 @@ class _AsyncMessageIter:
         try:
             return next(self._iter)
         except StopIteration:
-            raise StopAsyncIteration
+            raise StopAsyncIteration from None
 
 
 class InProcessChannel:
@@ -93,10 +107,13 @@ class _InProcessClient:
 
     async def list_tools(self) -> ListResult:
         resp = await self._roundtrip(mcp_pb2.ClientEnvelope(list_tools=mcp_pb2.ListToolsRequest()))
-        return ListResult(items=list(resp.tools), next_cursor=resp.next_cursor or None)
+        return ListResult(
+            items=[_convert_tool(t) for t in resp.tools],
+            next_cursor=resp.next_cursor or None,
+        )
 
-    async def call_tool(self, name: str, arguments: dict | None = None) -> mcp_pb2.CallToolResponse:
-        return await self._roundtrip(
+    async def call_tool(self, name: str, arguments: dict | None = None) -> CallToolResult:
+        resp = await self._roundtrip(
             mcp_pb2.ClientEnvelope(
                 call_tool=mcp_pb2.CallToolRequest(
                     name=name,
@@ -104,40 +121,52 @@ class _InProcessClient:
                 ),
             )
         )
+        return _convert_call_tool_result(resp)
 
     async def list_resources(self) -> ListResult:
         resp = await self._roundtrip(
             mcp_pb2.ClientEnvelope(list_resources=mcp_pb2.ListResourcesRequest())
         )
-        return ListResult(items=list(resp.resources), next_cursor=resp.next_cursor or None)
+        return ListResult(
+            items=[_convert_resource(r) for r in resp.resources],
+            next_cursor=resp.next_cursor or None,
+        )
 
-    async def read_resource(self, uri: str) -> mcp_pb2.ReadResourceResponse:
-        return await self._roundtrip(
+    async def read_resource(self, uri: str) -> ReadResourceResult:
+        resp = await self._roundtrip(
             mcp_pb2.ClientEnvelope(
                 read_resource=mcp_pb2.ReadResourceRequest(uri=uri),
             )
         )
+        return _convert_read_resource_result(resp)
 
     async def list_prompts(self) -> ListResult:
         resp = await self._roundtrip(
             mcp_pb2.ClientEnvelope(list_prompts=mcp_pb2.ListPromptsRequest())
         )
-        return ListResult(items=list(resp.prompts), next_cursor=resp.next_cursor or None)
+        return ListResult(
+            items=[_convert_prompt(p) for p in resp.prompts],
+            next_cursor=resp.next_cursor or None,
+        )
 
     async def get_prompt(
         self, name: str, arguments: dict[str, str] | None = None
-    ) -> mcp_pb2.GetPromptResponse:
-        return await self._roundtrip(
+    ) -> GetPromptResult:
+        resp = await self._roundtrip(
             mcp_pb2.ClientEnvelope(
                 get_prompt=mcp_pb2.GetPromptRequest(name=name, arguments=arguments or {}),
             )
         )
+        return _convert_get_prompt_result(resp)
 
     async def list_resource_templates(self) -> ListResult:
         resp = await self._roundtrip(
             mcp_pb2.ClientEnvelope(list_resource_templates=mcp_pb2.ListResourceTemplatesRequest())
         )
-        return ListResult(items=list(resp.templates), next_cursor=resp.next_cursor or None)
+        return ListResult(
+            items=[_convert_resource_template(t) for t in resp.templates],
+            next_cursor=resp.next_cursor or None,
+        )
 
     async def complete(
         self,
@@ -145,8 +174,8 @@ class _InProcessClient:
         ref_name: str,
         argument_name: str,
         value: str,
-    ) -> mcp_pb2.CompleteResponse:
-        return await self._roundtrip(
+    ) -> CompleteResult:
+        resp = await self._roundtrip(
             mcp_pb2.ClientEnvelope(
                 complete=mcp_pb2.CompleteRequest(
                     ref=mcp_pb2.CompletionRef(type=ref_type, name=ref_name),
@@ -154,9 +183,11 @@ class _InProcessClient:
                 )
             )
         )
+        return _convert_complete_result(resp)
 
-    async def ping(self) -> None:
+    async def ping(self) -> bool:
         await self._roundtrip(mcp_pb2.ClientEnvelope(ping=mcp_pb2.PingRequest()))
+        return True
 
     async def cancel(self, target_request_id: int) -> None:
         """Send a cancel notification then ping to confirm the session is live."""
