@@ -26,9 +26,9 @@ dependencies = [
 ]
 
 [project.urls]
-Homepage = "https://github.com/emitategh/FasterMcp"
-Repository = "https://github.com/emitategh/FasterMcp"
-Issues = "https://github.com/emitategh/FasterMcp/issues"
+Homepage = "https://github.com/emitategh/RapidMCP"
+Repository = "https://github.com/emitategh/RapidMCP"
+Issues = "https://github.com/emitategh/RapidMCP/issues"
 
 [project.optional-dependencies]
 langchain = [
