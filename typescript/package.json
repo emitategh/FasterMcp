@@ -22,18 +22,28 @@
     "generate": "buf generate ../proto",
     "lint": "tsc --noEmit"
   },
-  "keywords": ["mcp", "grpc", "llm", "tools", "model-context-protocol", "ai", "agents"],
+  "keywords": [
+    "mcp",
+    "grpc",
+    "llm",
+    "tools",
+    "model-context-protocol",
+    "ai",
+    "agents"
+  ],
   "license": "MIT",
   "author": "Emiliano Christiansen",
   "dependencies": {
     "nice-grpc": "^2.1.10",
-    "nice-grpc-common": "^2.0.2"
+    "nice-grpc-common": "^2.0.2",
+    "zod-to-json-schema": "^3.25.2"
   },
   "devDependencies": {
     "@bufbuild/buf": "^1.47.2",
+    "@types/node": "^22.0.0",
     "ts-proto": "^2.6.1",
     "typescript": "^5.7.0",
     "vitest": "^3.1.1",
-    "@types/node": "^22.0.0"
+    "zod": "^4.3.6"
   }
 }
