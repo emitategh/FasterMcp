@@ -1,6 +1,6 @@
 {
   "name": "@emitate/rapidmcp",
-  "version": "0.1.0",
+  "version": "0.1.1",
   "description": "gRPC-native MCP (Model Context Protocol) client for TypeScript",
   "type": "module",
   "main": "./dist/src/index.js",
