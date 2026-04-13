@@ -3,12 +3,16 @@
   "version": "0.1.0",
   "description": "gRPC-native MCP (Model Context Protocol) client for TypeScript",
   "type": "module",
-  "main": "./dist/index.js",
-  "types": "./dist/index.d.ts",
+  "main": "./dist/src/index.js",
+  "types": "./dist/src/index.d.ts",
   "exports": {
     ".": {
-      "import": "./dist/index.js",
-      "types": "./dist/index.d.ts"
+      "import": "./dist/src/index.js",
+      "types": "./dist/src/index.d.ts"
+    },
+    "./integrations/langchain": {
+      "import": "./dist/src/integrations/langchain.js",
+      "types": "./dist/src/integrations/langchain.d.ts"
     }
   },
   "files": [
@@ -22,28 +26,27 @@
     "generate": "buf generate ../proto",
     "lint": "tsc --noEmit"
   },
-  "keywords": [
-    "mcp",
-    "grpc",
-    "llm",
-    "tools",
-    "model-context-protocol",
-    "ai",
-    "agents"
-  ],
+  "keywords": ["mcp","grpc","llm","tools","model-context-protocol","ai","agents"],
   "license": "MIT",
   "author": "Emiliano Christiansen",
   "dependencies": {
     "nice-grpc": "^2.1.10",
     "nice-grpc-common": "^2.0.2",
+    "zod": "^4.3.6",
     "zod-to-json-schema": "^3.25.2"
+  },
+  "peerDependencies": {
+    "@langchain/core": ">=0.3.0"
+  },
+  "peerDependenciesMeta": {
+    "@langchain/core": { "optional": true }
   },
   "devDependencies": {
     "@bufbuild/buf": "^1.47.2",
+    "@langchain/core": "^0.3",
     "@types/node": "^22.0.0",
     "ts-proto": "^2.6.1",
     "typescript": "^5.7.0",
-    "vitest": "^3.1.1",
-    "zod": "^4.3.6"
+    "vitest": "^3.1.1"
   }
 }
