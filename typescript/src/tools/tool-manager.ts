@@ -1,11 +1,9 @@
 import type { ToolConfig, RegisteredTool } from "./tool.js";
 import { toContentItems } from "../_utils.js";
 import { McpError } from "../errors.js";
+import type { CallToolResult } from "../middleware.js";
 
-export interface CallToolResult {
-  content: Array<{ type: string; text: string; data: Uint8Array; mimeType: string; uri: string }>;
-  isError: boolean;
-}
+export type { CallToolResult };
 
 export class ToolManager {
   private _tools = new Map<string, RegisteredTool>();
