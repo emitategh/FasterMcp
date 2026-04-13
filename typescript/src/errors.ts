@@ -7,3 +7,10 @@ export class McpError extends Error {
     this.code = code;
   }
 }
+
+export class ToolError extends McpError {
+  constructor(message: string) {
+    super(-1, message);
+    this.name = "ToolError";
+  }
+}
