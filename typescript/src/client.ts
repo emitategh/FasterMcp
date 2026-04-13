@@ -112,7 +112,8 @@ export class Client {
       }
     }
 
-    const responseStream = grpcClient.session(requestIterable(), callOpts);
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any -- DeepPartial union type mismatch
+    const responseStream = grpcClient.session(requestIterable() as any, callOpts);
 
     // Start reader loop
     this._readerDone = this._readLoop(responseStream);
