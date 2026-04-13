@@ -1,5 +1,5 @@
 {
-  "name": "rapidmcp",
+  "name": "@emitate/rapidmcp",
   "version": "0.1.0",
   "description": "gRPC-native MCP (Model Context Protocol) client for TypeScript",
   "type": "module",
@@ -19,6 +19,9 @@
     "dist",
     "generated"
   ],
+  "publishConfig": {
+    "access": "public"
+  },
   "scripts": {
     "build": "tsc -p tsconfig.build.json",
     "test": "vitest run",
