@@ -25,3 +25,6 @@ typescript/dist/
 Thumbs.db
 .DS_Store
 *.stackdump
+
+# Claude Code internal files
+.claude/
