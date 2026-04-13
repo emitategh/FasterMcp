@@ -21,35 +21,13 @@ import type { ClientOptions } from "../auth.js";
 import { z } from "zod";
 
 // ---------------------------------------------------------------------------
-// Peer dep: @langchain/core — loaded lazily so missing it gives a clear error
-// ---------------------------------------------------------------------------
-
-type LCDynamicStructuredTool = Awaited<
-  ReturnType<typeof import("@langchain/core/tools")["DynamicStructuredTool"]["prototype"]["invoke"]>
-> extends never
-  ? never
-  // eslint-disable-next-line @typescript-eslint/no-explicit-any
-  : any;
-
-// We use a top-level await so the error surfaces at import time if the peer is missing.
-// eslint-disable-next-line @typescript-eslint/no-explicit-any
-let DSTool: any;
-try {
-  ({ DynamicStructuredTool: DSTool } = await import("@langchain/core/tools"));
-} catch {
-  // Will throw on first getTools() call with a helpful message instead of crashing at import.
-  DSTool = null;
-}
-
-// ---------------------------------------------------------------------------
 // JSON Schema → Zod shape (top-level properties only, covers all real MCP tools)
 // ---------------------------------------------------------------------------
 
 function jsonSchemaToZod(schema: Record<string, unknown>): z.ZodObject<z.ZodRawShape> {
   const props = (schema["properties"] ?? {}) as Record<string, Record<string, unknown>>;
   const required = new Set((schema["required"] ?? []) as string[]);
-  // eslint-disable-next-line @typescript-eslint/no-explicit-any
-  const shape: Record<string, any> = {};
+  const shape: Record<string, z.ZodTypeAny> = {};
 
   for (const [key, prop] of Object.entries(props)) {
     let zodType: z.ZodTypeAny;
@@ -138,17 +116,19 @@ export class MCPToolkit {
    *
    * Requires @langchain/core to be installed: npm install @langchain/core
    */
-  // eslint-disable-next-line @typescript-eslint/no-explicit-any
-  async getTools(): Promise<any[]> {
-    if (!DSTool) {
+  async getTools(): Promise<object[]> {
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    let DSTool: any;
+    try {
+      ({ DynamicStructuredTool: DSTool } = await import("@langchain/core/tools"));
+    } catch {
       throw new Error(
         "@langchain/core is required for MCPToolkit.getTools().\n" +
           "Install it with: npm install @langchain/core",
       );
     }
 
-    // eslint-disable-next-line @typescript-eslint/no-explicit-any
-    const tools: any[] = [];
+    const tools: object[] = [];
     let cursor: string | undefined;
 
     while (true) {
