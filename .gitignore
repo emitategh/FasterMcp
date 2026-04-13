@@ -24,3 +24,4 @@ typescript/dist/
 # OS
 Thumbs.db
 .DS_Store
+*.stackdump
