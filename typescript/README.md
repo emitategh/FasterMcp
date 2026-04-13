@@ -1,5 +1,7 @@
 # @emitate/rapidmcp
 
+> Experimental. This project is a proof-of-concept exploring gRPC as an MCP transport.
+
 > TypeScript / Node.js SDK for RapidMCP — gRPC-native MCP. ~17x lower latency than Streamable HTTP.
 
 [![npm version](https://img.shields.io/npm/v/@emitate/rapidmcp.svg)](https://www.npmjs.com/package/@emitate/rapidmcp)

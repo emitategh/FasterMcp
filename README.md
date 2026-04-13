@@ -1,6 +1,6 @@
 # RapidMCP
 
-> **Experimental.** This project is a proof-of-concept exploring gRPC as an MCP transport. The API may change without notice and it is not recommended for production use.
+> Experimental. This project is a proof-of-concept exploring gRPC as an MCP transport.
 
 **MCP over native gRPC.** ~17x lower latency than Streamable HTTP.
 

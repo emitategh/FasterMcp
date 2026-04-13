@@ -1,6 +1,6 @@
 # RapidMCP
 
-> **Experimental.** This project is a proof-of-concept exploring gRPC as an MCP transport. The API may change without notice and it is not recommended for production use.
+> Experimental. This project is a proof-of-concept exploring gRPC as an MCP transport.
 
 gRPC-native [MCP (Model Context Protocol)](https://modelcontextprotocol.io) library for Python. Uses protobuf over a persistent bidirectional gRPC stream instead of JSON-RPC over HTTP — **~17x lower latency** than FastMCP Streamable HTTP on local connections.
 
