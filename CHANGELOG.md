@@ -5,7 +5,16 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
-## [0.3.1] - 2026-04-13
+---
+
+## Python (`rapidmcp`)
+
+### [0.3.2] - 2026-04-14
+
+### Changed
+- Version bump for PyPI release
+
+### [0.3.1] - 2026-04-13
 
 ### Added
 - PyPI README feature table expanded to cover all 22 MCP spec features: Completions, Roots, Progress, Capability negotiation, Ping/Pong, LangChain and LiveKit integrations
@@ -17,14 +26,14 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ### Changed
 - Added `MANIFEST.in` to exclude `tests/` and `benchmark/` from the sdist (`.tar.gz`)
 
-## [0.3.0] - 2026-04-12
+### [0.3.0] - 2026-04-12
 
 ### Added
 - Docker-based TLS test suite: TLS happy path, TLS rejection (wrong CA, insecure client), mTLS (valid client cert, missing client cert), and combined TLS + token auth
 - PKI fixture for generating test certificates in Docker test helpers
 - `cryptography` dev dependency for TLS test certificate generation
 
-## [0.2.0] - 2026-04-11
+### [0.2.0] - 2026-04-11
 
 ### Added
 - **Authentication**: bearer token auth via `token=` param on `RapidMCP` server; `_AuthInterceptor` validates `Authorization: Bearer <token>` headers
@@ -43,7 +52,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - `auth.py`: case-insensitive `Bearer` prefix, `isawaitable`, removed field defaults
 - gRPC deadlock replaced reader/writer tasks with `asyncio.wait` race loop
 
-## [0.1.0] - 2026-04-10
+### [0.1.0] - 2026-04-10
 
 ### Added
 - Core gRPC-native MCP transport: single bidirectional streaming RPC (`Session`) over protobuf — ~17x lower latency than FastMCP Streamable HTTP
@@ -58,7 +67,56 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - `InProcessChannel` for unit testing without a running server
 - `McpError` / `ToolError` error types
 
+---
+
+## TypeScript (`@emitate/rapidmcp`)
+
+### [ts-0.1.4] - 2026-04-15
+
+### Fixed
+- Replaced `(schema as any).toJSONSchema()` cast with Zod v4 standalone `toJSONSchema()` function in `ToolManager`
+
+### Removed
+- Unused `zod-to-json-schema` direct dependency (still available transitively via `@langchain/core`)
+
+### [ts-0.1.3] - 2026-04-14
+
+### Fixed
+- Added `@bufbuild/protobuf` as direct dependency
+
+### [ts-0.1.2] - 2026-04-14
+
+### Changed
+- Version bump, barrel export updates
+
+### [ts-0.1.1] - 2026-04-14
+
+### Added
+- Server integration tests
+- Updated barrel exports
+
+### [ts-0.1.0] - 2026-04-13
+
+### Added
+- TypeScript server with full feature parity: tools, resources, prompts, middleware, context, auth, session management
+- `Client` with sampling, elicitation, and roots support
+- `ToolManager`, `ResourceManager`, `PromptManager`
+- TLS/mTLS auth helpers
+- **LangChain integration**: `MCPToolkit` adapter
+- 103 tests passing
+
+---
+
+<!-- Python links -->
+[0.3.2]: https://github.com/emitategh/FasterMcp/compare/v0.3.1...v0.3.2
 [0.3.1]: https://github.com/emitategh/FasterMcp/compare/v0.3.0...v0.3.1
 [0.3.0]: https://github.com/emitategh/FasterMcp/compare/v0.2.0...v0.3.0
 [0.2.0]: https://github.com/emitategh/FasterMcp/compare/v0.1.0...v0.2.0
 [0.1.0]: https://github.com/emitategh/FasterMcp/releases/tag/v0.1.0
+
+<!-- TypeScript links -->
+[ts-0.1.4]: https://github.com/emitategh/FasterMcp/compare/ts-v0.1.3...ts-v0.1.4
+[ts-0.1.3]: https://github.com/emitategh/FasterMcp/compare/ts-v0.1.2...ts-v0.1.3
+[ts-0.1.2]: https://github.com/emitategh/FasterMcp/compare/ts-v0.1.1...ts-v0.1.2
+[ts-0.1.1]: https://github.com/emitategh/FasterMcp/compare/ts-v0.1.0...ts-v0.1.1
+[ts-0.1.0]: https://github.com/emitategh/FasterMcp/releases/tag/ts-v0.1.0

@@ -2,6 +2,7 @@ import type { ToolConfig, RegisteredTool } from "./tool.js";
 import { toContentItems } from "../_utils.js";
 import { McpError } from "../errors.js";
 import type { CallToolResult } from "../middleware.js";
+import { toJSONSchema } from "zod";
 
 export type { CallToolResult };
 
@@ -11,7 +12,7 @@ export class ToolManager {
   addTool<T>(config: ToolConfig<T>): void {
     let inputSchema = "{}";
     if (config.parameters) {
-      const jsonSchema = (config.parameters as any).toJSONSchema();
+      const jsonSchema = toJSONSchema(config.parameters);
       inputSchema = JSON.stringify(jsonSchema);
     }
     this._tools.set(config.name, {
