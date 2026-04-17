@@ -76,14 +76,26 @@ asyncio.run(main())
 
 ### LangChain integration
 
+`RapidMCPClient` mirrors the `MultiServerMCPClient` shape from
+`langchain-mcp-adapters` — one client fans out across any number of
+RapidMCP gRPC servers and aggregates tools, prompts, and resources.
+
 ```python
-from rapidmcp.integrations.langchain import MCPToolkit
+from rapidmcp.integrations.langchain import RapidMCPClient
 from langchain_anthropic import ChatAnthropic
 from langgraph.prebuilt import create_react_agent
 
-async with MCPToolkit("localhost:50051") as toolkit:
-    tools = await toolkit.aget_tools()
-    agent = create_react_agent(ChatAnthropic(model="claude-sonnet-4-6"), tools)
+async with RapidMCPClient({
+    "docs": {"address": "localhost:50051"},
+    "sql":  {"address": "localhost:50052", "token": "...", "allowed_tools": ["query"]},
+}) as rc:
+    tools  = await rc.get_tools()                                   # aggregated across servers
+    prompt = await rc.get_prompt("docs", "summarise", arguments={"topic": "grpc"})
+    blobs  = await rc.get_resources("docs", uris=["file:///readme.md"])
+    async with rc.session("sql") as sess:
+        await sess.ping()
+
+    agent  = create_react_agent(ChatAnthropic(model="claude-sonnet-4-6"), tools)
     result = await agent.ainvoke({"messages": [("user", "Add 17 and 25")]})
 ```
 
@@ -174,7 +186,7 @@ async with Client("localhost:50051", tls=ClientTLSConfig(ca="ca.crt"), token="se
 | CLI | `rapidmcp run server.py` |
 | Token authentication | `auth=` callable (sync or async), bearer token |
 | TLS / mTLS | `TLSConfig`, `ClientTLSConfig` |
-| LangChain / LangGraph | `rapidmcp.integrations.langchain.MCPToolkit` |
+| LangChain / LangGraph | `rapidmcp.integrations.langchain.RapidMCPClient` (multi-server) |
 | LiveKit | `rapidmcp.integrations.livekit.MCPServerGRPC` |
 
 ## Middleware

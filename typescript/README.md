@@ -53,16 +53,26 @@ await client.close();
 
 ## LangChain / LangGraph
 
+`RapidMCPClient` mirrors the `MultiServerMCPClient` shape from
+`@langchain/mcp-adapters` — one client fans out across any number of
+RapidMCP gRPC servers and aggregates tools, prompts, and resources.
+
 ```typescript
-import { MCPToolkit } from "@emitate/rapidmcp/integrations/langchain";
+import { RapidMCPClient } from "@emitate/rapidmcp/integrations/langchain";
 import { ChatAnthropic } from "@langchain/anthropic";
 import { createReactAgent } from "@langchain/langgraph/prebuilt";
 
-const toolkit = new MCPToolkit("localhost:50051");
-await toolkit.connect();
+const rc = new RapidMCPClient({
+  docs: { address: "localhost:50051" },
+  sql:  { address: "localhost:50052", token: "...", allowedTools: ["query"] },
+});
+await rc.connect();
 
-const tools = await toolkit.getTools();
-const agent = createReactAgent({
+const tools  = await rc.getTools();                                   // aggregated across servers
+const prompt = await rc.getPrompt("docs", "summarise", { topic: "grpc" });
+const blobs  = await rc.getResources("docs", { uris: ["file:///readme.md"] });
+
+const agent  = createReactAgent({
   llm: new ChatAnthropic({ model: "claude-sonnet-4-6" }),
   tools,
 });
@@ -70,7 +80,7 @@ const result = await agent.invoke({
   messages: [{ role: "user", content: "Add 17 and 25" }],
 });
 
-await toolkit.close();
+await rc.close();
 ```
 
 Peer dependency: `npm install @langchain/core @langchain/anthropic @langchain/langgraph`
