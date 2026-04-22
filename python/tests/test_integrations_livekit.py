@@ -1,4 +1,5 @@
 """Functional tests for MCPServerGRPC — LiveKit integration."""
+
 from __future__ import annotations
 
 import contextlib
@@ -35,6 +36,7 @@ async def _grpc_adapter_for(server: RapidMCP, **kwargs: Any):
     async with InProcessChannel(server) as chan:
         adapter = MCPServerGRPC.__new__(MCPServerGRPC)
         from rapidmcp.integrations.livekit import MCPServer
+
         MCPServer.__init__(
             adapter,
             client_session_timeout_seconds=kwargs.pop("timeout", 30),
@@ -58,6 +60,7 @@ async def test_initialize_is_concurrency_safe() -> None:
     async with InProcessChannel(server) as chan:
         adapter = MCPServerGRPC.__new__(MCPServerGRPC)
         from rapidmcp.integrations.livekit import MCPServer
+
         MCPServer.__init__(adapter, client_session_timeout_seconds=30)
         adapter._address = "in-process"
 
@@ -95,6 +98,7 @@ async def test_list_tools_reuses_cache_until_invalidated() -> None:
         class _Explode:
             async def list_tools(self):
                 raise AssertionError("cache was bypassed — list_tools called a second time")
+
         grpc._grpc_client = _Explode()
 
         second = await grpc.list_tools()
@@ -109,9 +113,9 @@ async def test_list_tools_reuses_cache_until_invalidated() -> None:
 async def test_tool_error_message_includes_non_text_parts() -> None:
     """When a tool's error payload includes non-text content, the ToolError
     message must still convey that something was there (not be silently dropped)."""
-    from rapidmcp.types import CallToolResult, ContentItem
-    from livekit.agents.llm.mcp import MCPTool
     from livekit.agents.llm.tool_context import ToolError as LKToolError
+
+    from rapidmcp.types import CallToolResult, ContentItem
 
     # Build a fake error result that contains an image part (non-text)
     error_result = CallToolResult(
@@ -131,15 +135,13 @@ async def test_tool_error_message_includes_non_text_parts() -> None:
 
     async with _grpc_adapter_for(app) as grpc:
         # Patch the underlying gRPC client to return our crafted error result
-        real_call = grpc._grpc_client.call_tool
-
         async def _fake_call(name, arguments):
             return error_result
 
         grpc._grpc_client.call_tool = _fake_call  # type: ignore[method-assign]
 
         tools = await grpc.list_tools()
-        # Reset grpc_client patching for call_tool but keep list from cache
+        # Keep the fake call_tool in place for the actual tool invocation
         grpc._grpc_client.call_tool = _fake_call  # type: ignore[method-assign]
 
         boom_tool = next(t for t in tools if t.info.name == "boom")
@@ -183,6 +185,7 @@ async def test_multi_content_uses_default_resolver() -> None:
     """With no custom resolver, a multi-content response is JSON-serialized
     by the library's default resolver (not our old hand-rolled shape)."""
     import json as _json
+
     from rapidmcp.content import Image
 
     app = RapidMCP(name="t", version="0")

@@ -167,9 +167,7 @@ class MCPServerGRPC(MCPServer):
                     )
 
                 mcp_result = _to_mcp_call_result(tool_result)
-                ctx = MCPToolResultContext(
-                    tool_name=_n, arguments=raw_arguments, result=mcp_result
-                )
+                ctx = MCPToolResultContext(tool_name=_n, arguments=raw_arguments, result=mcp_result)
                 resolved = self._tool_result_resolver(ctx)
                 if asyncio.iscoroutine(resolved):
                     resolved = await resolved
