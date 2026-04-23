@@ -48,10 +48,7 @@ async def _grpc_adapter_for(server: RapidMCP, **kwargs: Any):
         adapter._allowed_tools = kwargs.pop("allowed_tools", None)
         adapter._connected = True
         adapter._init_lock = asyncio.Lock()
-        try:
-            yield adapter
-        finally:
-            adapter._connected = False
+        yield adapter
 
 
 async def test_initialize_is_concurrency_safe() -> None:
@@ -142,9 +139,6 @@ async def test_tool_error_message_includes_non_text_parts() -> None:
         grpc._grpc_client.call_tool = _fake_call  # type: ignore[method-assign]
 
         tools = await grpc.list_tools()
-        # Keep the fake call_tool in place for the actual tool invocation
-        grpc._grpc_client.call_tool = _fake_call  # type: ignore[method-assign]
-
         boom_tool = next(t for t in tools if t.info.name == "boom")
         with pytest.raises(LKToolError) as exc_info:
             await boom_tool(raw_arguments={})

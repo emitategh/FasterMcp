@@ -177,6 +177,8 @@ class MCPServerGRPC(MCPServer):
                     resolved = await resolved
                 return resolved
 
+            # TODO(meta): forward tool.meta once the rapidmcp Tool DTO
+            # exposes it (requires proto schema change, tracked separately).
             tools.append(
                 function_tool(
                     _call,
@@ -203,6 +205,8 @@ class MCPServerGRPC(MCPServer):
         return tools
 
     async def aclose(self) -> None:
+        if not self._connected:
+            return
         self._connected = False
         await self._grpc_client.close()
         logger.info("MCPServerGRPC disconnected from %s", self._address)
@@ -213,5 +217,9 @@ class MCPServerGRPC(MCPServer):
         raise NotImplementedError("MCPServerGRPC uses gRPC transport, not client_streams")
 
     def __repr__(self) -> str:
-        allowed = f", allowed_tools={list(self._allowed_tools)}" if self._allowed_tools else ""
+        allowed = (
+            f", allowed_tools={sorted(self._allowed_tools)}"
+            if self._allowed_tools
+            else ""
+        )
         return f"MCPServerGRPC(address={self._address!r}{allowed})"
