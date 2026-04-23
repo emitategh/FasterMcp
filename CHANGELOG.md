@@ -71,6 +71,34 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## TypeScript (`@emitate/rapidmcp`)
 
+### [ts-0.2.0] - 2026-04-20
+
+### Added
+- **`RapidMCPClient` multi-server LangChain adapter** — mirrors the `MultiServerMCPClient` shape from `@langchain/mcp-adapters`. One client fans out across any number of RapidMCP gRPC servers and aggregates tools, prompts, and resources:
+  ```typescript
+  import { RapidMCPClient } from "@emitate/rapidmcp/integrations/langchain";
+  const rc = new RapidMCPClient({
+    docs: { address: "localhost:50051" },
+    sql:  { address: "localhost:50052", token: "...", allowedTools: ["query"] },
+  });
+  await rc.connect();
+  const tools = await rc.getTools();
+  ```
+- `getResources(serverName, { uris? })` — read one or more resources, returns each as `{ data, mimeType, metadata, asString(), asBytes() }`
+- `getPrompt(serverName, promptName, args)` — render a prompt to a LangChain-style message list
+
+### Changed
+- **BREAKING**: The legacy `MCPToolkit` single-server adapter has been **removed** in favor of `RapidMCPClient`. Migration:
+  ```typescript
+  // before
+  const toolkit = new MCPToolkit({ address: "localhost:50051" });
+  const tools = await toolkit.getTools();
+  // after
+  const rc = new RapidMCPClient({ myServer: { address: "localhost:50051" } });
+  await rc.connect();
+  const tools = await rc.getTools();
+  ```
+
 ### [ts-0.1.4] - 2026-04-15
 
 ### Fixed
@@ -108,15 +136,16 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ---
 
 <!-- Python links -->
-[0.3.2]: https://github.com/emitategh/FasterMcp/compare/v0.3.1...v0.3.2
-[0.3.1]: https://github.com/emitategh/FasterMcp/compare/v0.3.0...v0.3.1
-[0.3.0]: https://github.com/emitategh/FasterMcp/compare/v0.2.0...v0.3.0
-[0.2.0]: https://github.com/emitategh/FasterMcp/compare/v0.1.0...v0.2.0
-[0.1.0]: https://github.com/emitategh/FasterMcp/releases/tag/v0.1.0
+[0.3.2]: https://github.com/emitategh/RapidMCP/compare/v0.3.1...v0.3.2
+[0.3.1]: https://github.com/emitategh/RapidMCP/compare/v0.3.0...v0.3.1
+[0.3.0]: https://github.com/emitategh/RapidMCP/compare/v0.2.0...v0.3.0
+[0.2.0]: https://github.com/emitategh/RapidMCP/compare/v0.1.0...v0.2.0
+[0.1.0]: https://github.com/emitategh/RapidMCP/releases/tag/v0.1.0
 
 <!-- TypeScript links -->
-[ts-0.1.4]: https://github.com/emitategh/FasterMcp/compare/ts-v0.1.3...ts-v0.1.4
-[ts-0.1.3]: https://github.com/emitategh/FasterMcp/compare/ts-v0.1.2...ts-v0.1.3
-[ts-0.1.2]: https://github.com/emitategh/FasterMcp/compare/ts-v0.1.1...ts-v0.1.2
-[ts-0.1.1]: https://github.com/emitategh/FasterMcp/compare/ts-v0.1.0...ts-v0.1.1
-[ts-0.1.0]: https://github.com/emitategh/FasterMcp/releases/tag/ts-v0.1.0
+[ts-0.2.0]: https://github.com/emitategh/RapidMCP/compare/ts-v0.1.4...ts-v0.2.0
+[ts-0.1.4]: https://github.com/emitategh/RapidMCP/compare/ts-v0.1.3...ts-v0.1.4
+[ts-0.1.3]: https://github.com/emitategh/RapidMCP/compare/ts-v0.1.2...ts-v0.1.3
+[ts-0.1.2]: https://github.com/emitategh/RapidMCP/compare/ts-v0.1.1...ts-v0.1.2
+[ts-0.1.1]: https://github.com/emitategh/RapidMCP/compare/ts-v0.1.0...ts-v0.1.1
+[ts-0.1.0]: https://github.com/emitategh/RapidMCP/releases/tag/ts-v0.1.0
