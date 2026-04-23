@@ -34,6 +34,7 @@ from rapidmcp.types import CallToolResult as RapidCallToolResult
 logger = logging.getLogger(__name__)
 
 try:
+    import mcp.types as mcp_types
     from livekit.agents.llm.mcp import (
         MCPServer,
         MCPTool,
@@ -48,12 +49,10 @@ except ImportError as e:
     ) from e
 
 
-def _to_mcp_call_result(res: RapidCallToolResult) -> Any:
+def _to_mcp_call_result(res: RapidCallToolResult) -> mcp_types.CallToolResult:
     """Convert rapidmcp.types.CallToolResult to mcp.types.CallToolResult so
     that a user-supplied MCPToolResultResolver receives the same type it
     would from MCPServerHTTP."""
-    import mcp.types as mcp_types
-
     parts: list[Any] = []
     for c in res.content:
         if c.type == "text":
@@ -188,7 +187,11 @@ class MCPServerGRPC(MCPServer):
             "MCPServerGRPC %s — %d tool(s): %s",
             self._address,
             len(tools),
-            [t.name for t in result.items],
+            [
+                t.name
+                for t in result.items
+                if not self._allowed_tools or t.name in self._allowed_tools
+            ],
         )
         return tools
 
